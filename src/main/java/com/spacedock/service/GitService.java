@@ -11,31 +11,63 @@ import java.util.UUID;
 
 @Service
 public class GitService {
-    // This points to the workspaces folder at the root of your project
-    private final String WORKSPACE_DIR = "workspaces";
+    private static final String WORKSPACE_DIR = System.getProperty("user.dir") + "/workspaces";
 
-    public Path cloneRepository(String repoUrl, UUID deploymentId) {
+    private final RuntimeDetector runtimeDetector;
+    private final DockerService dockerService;
+
+    public GitService(RuntimeDetector runtimeDetector, DockerService dockerService) {
+        this.runtimeDetector = runtimeDetector;
+        this.dockerService = dockerService;
+    }
+
+    @Async
+    public void deploy(String repoUrl, UUID deploymentId) {
+        Path workspacePath = null;
         try {
-            // Create a unique folder for this specific deployment
-            String targetFolderName = "deployment_" + deploymentId.toString();
-            File targetDirectory = Paths.get(WORKSPACE_DIR, targetFolderName).toFile();
+            // Step 2 — Clone the repo
+            workspacePath = cloneRepository(repoUrl, deploymentId);
 
-            System.out.println("⬇️ Initiating clone for: " + repoUrl);
-            System.out.println("📁 Target directory: " + targetDirectory.getAbsolutePath());
+            // Verify the repo has a Dockerfile — if not, we stop here
+            if (!runtimeDetector.hasDockerfile(workspacePath)) {
+                System.err.println("❌ No Dockerfile found in repo. Deployment aborted.");
+                System.err.println("   SpaceDock requires a Dockerfile in the root of your repository.");
+                return;
+            }
 
-            // The JGit command that reaches out to the internet
-            Git.cloneRepository()
-                    .setURI(repoUrl)
-                    .setDirectory(targetDirectory)
-                    .call();
+            // Step 3 — Build the Docker image from the Dockerfile
+            String imageTag = dockerService.buildImage(workspacePath.toFile(), deploymentId);
 
-            System.out.println("✅ Repository successfully cloned into SpaceDock!");
+            // Step 5 — Cleanup the workspace (image is built, we don't need source anymore)
+            dockerService.cleanupWorkspace(workspacePath);
 
-            return targetDirectory.toPath();
+            // Step 4 — Run the container
+            DockerService.RunResult result = dockerService.runContainer(imageTag);
 
-        } catch (GitAPIException e) {
-            System.err.println("❌ Failed to clone repository: " + e.getMessage());
-            throw new RuntimeException("Git clone failed", e);
+            System.out.println("🌍 Deployment live at http://localhost:" + result.hostPort());
+
+        } catch (Exception e) {
+            System.err.println("❌ Deployment pipeline failed: " + e.getMessage());
+            e.printStackTrace();
+            // Attempt cleanup even on failure so we don't leave junk on disk
+            if (workspacePath != null) {
+                dockerService.cleanupWorkspace(workspacePath);
+            }
         }
+    }
+    private Path cloneRepository(String repoUrl, UUID deploymentId) throws GitAPIException {
+        String folderName = "deployment_" + deploymentId;
+        File targetDir = Paths.get(WORKSPACE_DIR, folderName).toFile();
+
+        System.out.println("⬇️  Cloning: " + repoUrl);
+        System.out.println("📁 Target:  " + targetDir.getAbsolutePath());
+
+        Git.cloneRepository()
+                .setURI(repoUrl)
+                .setDirectory(targetDir)
+                .call();
+
+        System.out.println("✅ Clone complete");
+        return targetDir.toPath();
     }
 }
