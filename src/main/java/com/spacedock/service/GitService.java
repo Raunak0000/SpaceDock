@@ -2,6 +2,7 @@ package com.spacedock.service;
 
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -55,6 +56,7 @@ public class GitService {
             }
         }
     }
+
     private Path cloneRepository(String repoUrl, UUID deploymentId) throws GitAPIException {
         String folderName = "deployment_" + deploymentId;
         File targetDir = Paths.get(WORKSPACE_DIR, folderName).toFile();

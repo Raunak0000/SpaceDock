@@ -1,6 +1,5 @@
 package com.spacedock.controller;
 
-
 import com.spacedock.dto.DeployRequest;
 import com.spacedock.service.GitService;
 import org.springframework.http.ResponseEntity;
@@ -10,11 +9,12 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/deployments")
-@CrossOrigin(origins =  "*")
+@CrossOrigin(origins = "*")
 public class DeploymentController {
-        private final GitService gitService;
+    private final GitService gitService;
 
-    // This is Dependency Injection. Spring Boot automatically hands the controller our GitService.
+    // This is Dependency Injection. Spring Boot automatically hands the controller
+    // our GitService.
     public DeploymentController(GitService gitService) {
         this.gitService = gitService;
     }
