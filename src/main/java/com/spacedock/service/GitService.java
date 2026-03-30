@@ -1,5 +1,7 @@
 package com.spacedock.service;
 
+import com.spacedock.model.Deployment;
+import com.spacedock.repository.DeploymentRepository;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.springframework.scheduling.annotation.Async;
@@ -12,52 +14,86 @@ import java.util.UUID;
 
 @Service
 public class GitService {
+
     private static final String WORKSPACE_DIR = System.getProperty("user.dir") + "/workspaces";
 
     private final RuntimeDetector runtimeDetector;
     private final DockerService dockerService;
+    private final DeploymentRepository deploymentRepository;
 
-    public GitService(RuntimeDetector runtimeDetector, DockerService dockerService) {
+    public GitService(RuntimeDetector runtimeDetector,
+            DockerService dockerService,
+            DeploymentRepository deploymentRepository) {
         this.runtimeDetector = runtimeDetector;
         this.dockerService = dockerService;
+        this.deploymentRepository = deploymentRepository;
     }
 
     @Async
     public void deploy(String repoUrl, UUID deploymentId) {
         Path workspacePath = null;
         try {
-            // Step 2 — Clone the repo
+            // Update status to CLONING before we start
+            updateStatus(deploymentId, Deployment.DeploymentStatus.CLONING);
             workspacePath = cloneRepository(repoUrl, deploymentId);
 
-            // Verify the repo has a Dockerfile — if not, we stop here
+            // Check for Dockerfile
             if (!runtimeDetector.hasDockerfile(workspacePath)) {
-                System.err.println("❌ No Dockerfile found in repo. Deployment aborted.");
-                System.err.println("   SpaceDock requires a Dockerfile in the root of your repository.");
+                System.err.println("❌ No Dockerfile found. Deployment aborted.");
+                updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
+                dockerService.cleanupWorkspace(workspacePath);
                 return;
             }
 
-            // Step 3 — Build the Docker image from the Dockerfile
-            String imageTag = dockerService.buildImage(workspacePath.toFile(), deploymentId);
+            // Update status to BUILDING before Docker build starts
+            updateStatus(deploymentId, Deployment.DeploymentStatus.BUILDING);
+            String imageTag = dockerService.buildImage(
+                    workspacePath.toFile(), deploymentId);
 
-            // Step 5 — Cleanup the workspace (image is built, we don't need source anymore)
+            // Cleanup workspace — image is baked, source no longer needed
             dockerService.cleanupWorkspace(workspacePath);
 
-            // Step 4 — Run the container
+            // Run the container
             DockerService.RunResult result = dockerService.runContainer(imageTag);
 
-            System.out.println("🌍 Deployment live at http://localhost:" + result.hostPort());
+            // Update status to RUNNING — also save container ID and port
+            updateStatusRunning(deploymentId, result.containerId(), result.hostPort());
+
+            System.out.println("🌍 Deployment live at http://localhost:"
+                    + result.hostPort());
 
         } catch (Exception e) {
             System.err.println("❌ Deployment pipeline failed: " + e.getMessage());
             e.printStackTrace();
-            // Attempt cleanup even on failure so we don't leave junk on disk
+            updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
             if (workspacePath != null) {
                 dockerService.cleanupWorkspace(workspacePath);
             }
         }
     }
 
-    private Path cloneRepository(String repoUrl, UUID deploymentId) throws GitAPIException {
+    private void updateStatus(UUID deploymentId,
+            Deployment.DeploymentStatus status) {
+        deploymentRepository.findById(deploymentId).ifPresent(d -> {
+            d.setStatus(status);
+            deploymentRepository.save(d);
+            System.out.println("📝 Status → " + status);
+        });
+    }
+
+    private void updateStatusRunning(UUID deploymentId,
+            String containerId, int port) {
+        deploymentRepository.findById(deploymentId).ifPresent(d -> {
+            d.setStatus(Deployment.DeploymentStatus.RUNNING);
+            d.setContainerId(containerId);
+            d.setPortNumber(port);
+            deploymentRepository.save(d);
+            System.out.println("📝 Status → RUNNING on port " + port);
+        });
+    }
+
+    private Path cloneRepository(String repoUrl,
+            UUID deploymentId) throws GitAPIException {
         String folderName = "deployment_" + deploymentId;
         File targetDir = Paths.get(WORKSPACE_DIR, folderName).toFile();
 
