@@ -20,51 +20,63 @@ public class GitService {
     private final RuntimeDetector runtimeDetector;
     private final DockerService dockerService;
     private final DeploymentRepository deploymentRepository;
+    private final LogBroadcaster logBroadcaster;
 
     public GitService(RuntimeDetector runtimeDetector,
             DockerService dockerService,
-            DeploymentRepository deploymentRepository) {
+            DeploymentRepository deploymentRepository,
+            LogBroadcaster logBroadcaster) {
         this.runtimeDetector = runtimeDetector;
         this.dockerService = dockerService;
         this.deploymentRepository = deploymentRepository;
+        this.logBroadcaster = logBroadcaster;
     }
 
     @Async
     public void deploy(String repoUrl, UUID deploymentId) {
         Path workspacePath = null;
+        String idStr = deploymentId.toString();
         try {
-            // Update status to CLONING before we start
-            updateStatus(deploymentId, Deployment.DeploymentStatus.CLONING);
-            workspacePath = cloneRepository(repoUrl, deploymentId);
 
-            // Check for Dockerfile
+            Thread.sleep(1000);
+            // CLONING
+            updateStatus(deploymentId, Deployment.DeploymentStatus.CLONING);
+            logBroadcaster.broadcastLog(idStr, "⬇️ Cloning repository...");
+            workspacePath = cloneRepository(repoUrl, deploymentId);
+            logBroadcaster.broadcastLog(idStr, "✅ Clone complete");
+
+            // Dockerfile check
             if (!runtimeDetector.hasDockerfile(workspacePath)) {
-                System.err.println("❌ No Dockerfile found. Deployment aborted.");
+                logBroadcaster.broadcastLog(idStr,
+                        "❌ No Dockerfile found. Deployment aborted.");
                 updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
                 dockerService.cleanupWorkspace(workspacePath);
                 return;
             }
 
-            // Update status to BUILDING before Docker build starts
+            // BUILDING — logs stream from inside buildImage()
             updateStatus(deploymentId, Deployment.DeploymentStatus.BUILDING);
             String imageTag = dockerService.buildImage(
                     workspacePath.toFile(), deploymentId);
 
-            // Cleanup workspace — image is baked, source no longer needed
+            // Cleanup
             dockerService.cleanupWorkspace(workspacePath);
+            logBroadcaster.broadcastLog(idStr, "🧹 Workspace cleaned up");
 
-            // Run the container
+            // RUN
             DockerService.RunResult result = dockerService.runContainer(imageTag);
+            updateStatusRunning(deploymentId,
+                    result.containerId(), result.hostPort());
 
-            // Update status to RUNNING — also save container ID and port
-            updateStatusRunning(deploymentId, result.containerId(), result.hostPort());
-
+            logBroadcaster.broadcastLog(idStr,
+                    "🌍 Deployment live at http://localhost:" + result.hostPort());
             System.out.println("🌍 Deployment live at http://localhost:"
                     + result.hostPort());
 
         } catch (Exception e) {
             System.err.println("❌ Deployment pipeline failed: " + e.getMessage());
             e.printStackTrace();
+            logBroadcaster.broadcastLog(idStr, "❌ Deployment failed: " + e.getMessage());
             updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
             if (workspacePath != null) {
                 dockerService.cleanupWorkspace(workspacePath);
@@ -100,12 +112,12 @@ public class GitService {
         System.out.println("⬇️  Cloning: " + repoUrl);
         System.out.println("📁 Target:  " + targetDir.getAbsolutePath());
 
-        Git.cloneRepository()
+        try (Git git = Git.cloneRepository()
                 .setURI(repoUrl)
                 .setDirectory(targetDir)
-                .call();
-
-        System.out.println("✅ Clone complete");
+                .call()) {
+            System.out.println("✅ Clone complete");
+        }
         return targetDir.toPath();
     }
 }

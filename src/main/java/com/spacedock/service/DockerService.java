@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class DockerService {
     private final DockerClient dockerClient;
-    private final AtomicInteger nextPort = new AtomicInteger(4000);
+    private final AtomicInteger nextPort = new AtomicInteger(8000);
 
     public DockerService() {
         var config = DefaultDockerClientConfig.createDefaultConfigBuilder().build();

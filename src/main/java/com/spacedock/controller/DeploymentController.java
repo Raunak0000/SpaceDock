@@ -24,25 +24,29 @@ public class DeploymentController {
         this.deploymentRepository = deploymentRepository;
     }
 
-    @PostMapping
-    public ResponseEntity<String> triggerDeployment(@RequestBody DeployRequest request) {
+    @PostMapping("/prepare")
+    public ResponseEntity<String> prepareDeployment(@RequestBody DeployRequest request) {
         if (request.getRepoUrl() == null || request.getRepoUrl().trim().isEmpty()) {
             return ResponseEntity.badRequest().body("Error: GitHub URL cannot be empty.");
         }
 
-        // Create the DB record FIRST — status defaults to QUEUED via @PrePersist
+        // Create the DB record FIRST
         Deployment deployment = new Deployment();
         deployment.setRepoUrl(request.getRepoUrl());
         Deployment saved = deploymentRepository.save(deployment);
 
-        System.out.println("🚀 Deployment queued for: " + request.getRepoUrl());
+        System.out.println("🚀 Deployment prepared for: " + request.getRepoUrl());
         System.out.println("   DB record created with ID: " + saved.getId());
 
-        // Pass the real DB-assigned ID into the pipeline
-        gitService.deploy(request.getRepoUrl(), saved.getId());
+        return ResponseEntity.ok(saved.getId().toString());
+    }
 
-        return ResponseEntity.accepted()
-                .body("Deployment queued. ID: " + saved.getId());
+    @PostMapping("/start/{id}")
+    public ResponseEntity<String> startDeployment(@PathVariable UUID id) {
+        return deploymentRepository.findById(id).map(d -> {
+            gitService.deploy(d.getRepoUrl(), d.getId());
+            return ResponseEntity.ok("Deployment started");
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping
