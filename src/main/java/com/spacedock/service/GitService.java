@@ -57,7 +57,7 @@ public class GitService {
             // BUILDING — logs stream from inside buildImage()
             updateStatus(deploymentId, Deployment.DeploymentStatus.BUILDING);
             String imageTag = dockerService.buildImage(
-                    workspacePath.toFile(), deploymentId);
+                    workspacePath.toFile(), deploymentId, logBroadcaster);
 
             // Cleanup
             dockerService.cleanupWorkspace(workspacePath);

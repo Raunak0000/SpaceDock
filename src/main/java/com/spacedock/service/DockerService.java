@@ -2,6 +2,7 @@ package com.spacedock.service;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.BuildImageResultCallback;
+import com.github.dockerjava.api.model.BuildResponseItem;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Ports;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -22,8 +24,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class DockerService {
+
     private final DockerClient dockerClient;
-    private final AtomicInteger nextPort = new AtomicInteger(8000);
+    private final AtomicInteger nextPort = new AtomicInteger(4000);
 
     public DockerService() {
         var config = DefaultDockerClientConfig.createDefaultConfigBuilder().build();
@@ -37,21 +40,42 @@ public class DockerService {
         this.dockerClient = DockerClientImpl.getInstance(config, httpClient);
     }
 
-    public String buildImage(File projectDir, UUID deploymentId) {
+    // Phase 3 — streams every Docker build log line to the browser
+    public String buildImage(File projectDir, UUID deploymentId,
+            LogBroadcaster logBroadcaster) {
         String imageTag = "spacedock-" + deploymentId.toString();
+        String idStr = deploymentId.toString();
+
         System.out.println("🔨 Building image: " + imageTag);
+        logBroadcaster.broadcastLog(idStr, "🔨 Starting Docker build...");
 
         dockerClient.buildImageCmd(projectDir)
                 .withTags(Set.of(imageTag))
-                .exec(new BuildImageResultCallback())
+                .exec(new BuildImageResultCallback() {
+                    @Override
+                    public void onNext(BuildResponseItem item) {
+                        // Called for every line Docker outputs during the build
+                        if (item.getStream() != null) {
+                            String line = item.getStream().trim();
+                            if (!line.isEmpty()) {
+                                System.out.println("[BUILD] " + line);
+                                // This is what streams to the browser in real time
+                                logBroadcaster.broadcastLog(idStr, line);
+                            }
+                        }
+                        super.onNext(item);
+                    }
+                })
                 .awaitImageId();
 
         System.out.println("✅ Image built: " + imageTag);
+        logBroadcaster.broadcastLog(idStr, "✅ Image built successfully!");
         return imageTag;
     }
 
     public RunResult runContainer(String imageTag) {
-        int hostPort = nextPort.getAndIncrement();
+        // Find a free port — never collide with an already-running container
+        int hostPort = findFreePort();
         ExposedPort containerPort = ExposedPort.tcp(8080);
 
         Ports portBindings = new Ports();
@@ -74,14 +98,27 @@ public class DockerService {
         return new RunResult(containerId, hostPort);
     }
 
-    /**
-     * Step 5 — deletes the cloned workspace folder after image is built.
-     * The container keeps running; we no longer need the source code on disk.
-     */
+    // Increments until it finds a port nothing is currently bound to
+    private int findFreePort() {
+        int port = nextPort.getAndIncrement();
+        while (!isPortFree(port)) {
+            port = nextPort.getAndIncrement();
+        }
+        return port;
+    }
+
+    private boolean isPortFree(int port) {
+        try (ServerSocket s = new ServerSocket(port)) {
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     public void cleanupWorkspace(Path workspaceDir) {
         try {
             Files.walk(workspaceDir)
-                    .sorted(Comparator.reverseOrder()) // delete files before their parent dirs
+                    .sorted(Comparator.reverseOrder())
                     .map(Path::toFile)
                     .forEach(File::delete);
             System.out.println("🧹 Workspace cleaned up: " + workspaceDir);
@@ -90,5 +127,6 @@ public class DockerService {
         }
     }
 
-    public record RunResult(String containerId, int hostPort) {}
+    public record RunResult(String containerId, int hostPort) {
+    }
 }
