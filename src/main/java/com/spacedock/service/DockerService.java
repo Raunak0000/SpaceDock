@@ -127,6 +127,16 @@ public class DockerService {
         }
     }
 
+    public void stopContainer(String containerId) {
+        try {
+            dockerClient.stopContainerCmd(containerId).exec();
+            System.out.println("🛑 Container stopped: " + containerId);
+        } catch (Exception e) {
+            System.err.println("⚠️ Could not stop container: " + e.getMessage());
+        }
+    }
+
     public record RunResult(String containerId, int hostPort) {
     }
+
 }

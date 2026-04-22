@@ -21,15 +21,18 @@ public class GitService {
     private final DockerService dockerService;
     private final DeploymentRepository deploymentRepository;
     private final LogBroadcaster logBroadcaster;
+    private final ProxyService proxyService;
 
     public GitService(RuntimeDetector runtimeDetector,
             DockerService dockerService,
             DeploymentRepository deploymentRepository,
-            LogBroadcaster logBroadcaster) {
+            LogBroadcaster logBroadcaster,
+            ProxyService proxyService) {
         this.runtimeDetector = runtimeDetector;
         this.dockerService = dockerService;
         this.deploymentRepository = deploymentRepository;
         this.logBroadcaster = logBroadcaster;
+        this.proxyService = proxyService;
     }
 
     @Async
@@ -37,8 +40,8 @@ public class GitService {
         Path workspacePath = null;
         String idStr = deploymentId.toString();
         try {
-
             Thread.sleep(1000);
+
             // CLONING
             updateStatus(deploymentId, Deployment.DeploymentStatus.CLONING);
             logBroadcaster.broadcastLog(idStr, "⬇️ Cloning repository...");
@@ -54,12 +57,12 @@ public class GitService {
                 return;
             }
 
-            // BUILDING — logs stream from inside buildImage()
+            // BUILDING
             updateStatus(deploymentId, Deployment.DeploymentStatus.BUILDING);
             String imageTag = dockerService.buildImage(
                     workspacePath.toFile(), deploymentId, logBroadcaster);
 
-            // Cleanup
+            // Cleanup workspace
             dockerService.cleanupWorkspace(workspacePath);
             logBroadcaster.broadcastLog(idStr, "🧹 Workspace cleaned up");
 
@@ -68,15 +71,20 @@ public class GitService {
             updateStatusRunning(deploymentId,
                     result.containerId(), result.hostPort());
 
+            // Register subdomain route in Caddy
+            proxyService.registerRoute(idStr, result.hostPort());
+
+            // Broadcast the clean subdomain URL
+            String liveUrl = "http://" + idStr + ".localhost";
             logBroadcaster.broadcastLog(idStr,
-                    "🌍 Deployment live at http://localhost:" + result.hostPort());
-            System.out.println("🌍 Deployment live at http://localhost:"
-                    + result.hostPort());
+                    "🌍 Deployment live at " + liveUrl);
+            System.out.println("🌍 Deployment live at " + liveUrl);
 
         } catch (Exception e) {
             System.err.println("❌ Deployment pipeline failed: " + e.getMessage());
             e.printStackTrace();
-            logBroadcaster.broadcastLog(idStr, "❌ Deployment failed: " + e.getMessage());
+            logBroadcaster.broadcastLog(idStr,
+                    "❌ Deployment failed: " + e.getMessage());
             updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
             if (workspacePath != null) {
                 dockerService.cleanupWorkspace(workspacePath);
