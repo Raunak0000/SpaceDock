@@ -96,6 +96,20 @@
         .log-line.info {
             color: #58a6ff;
         }
+
+        #live-url {
+            margin-top: 16px;
+            font-size: 14px;
+        }
+
+        #live-url a {
+            color: #3fb950;
+            text-decoration: none;
+        }
+
+        #live-url a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 
@@ -111,6 +125,7 @@
 
     <div id="status">Waiting for deployment...</div>
     <div id="log-container"></div>
+    <div id="live-url"></div>
 
     <script>
         let stompClient = null;
@@ -167,11 +182,18 @@
 
             stompClient.subscribe(topic, (message) => {
                 const line = message.body;
-                // Colour code based on content
                 if (line.startsWith('❌') || line.toLowerCase().includes('error')) {
                     appendLog(line, 'error');
                 } else if (line.startsWith('✅') || line.startsWith('🌍')) {
                     appendLog(line, 'success');
+                    if (line.startsWith('🌍')) {
+                        const urlMatch = line.match(/http:\/\/\S+/);
+                        if (urlMatch) {
+                            const url = urlMatch[0];
+                            document.getElementById('live-url').innerHTML =
+                                `Your app is live: <a href="${url}" target="_blank">${url}</a>`;
+                        }
+                    }
                 } else {
                     appendLog(line, '');
                 }
