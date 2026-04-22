@@ -12,5 +12,16 @@ services:
     volumes:
       - spacedock-data:/var/lib/postgresql/data
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: spacedock-caddy
+    ports:
+      - "80:80"
+      - "2019:2019"
+    volumes:
+      - caddy-data:/data
+      - ./Caddyfile:/etc/caddy/Caddyfile
+
 volumes:
   spacedock-data:
+  caddy-data:
