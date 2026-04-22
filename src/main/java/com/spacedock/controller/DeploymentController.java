@@ -3,6 +3,7 @@ package com.spacedock.controller;
 import com.spacedock.dto.DeployRequest;
 import com.spacedock.model.Deployment;
 import com.spacedock.repository.DeploymentRepository;
+import com.spacedock.service.DockerService;
 import com.spacedock.service.GitService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,36 +18,36 @@ public class DeploymentController {
 
     private final GitService gitService;
     private final DeploymentRepository deploymentRepository;
+    private final DockerService dockerService;
 
     public DeploymentController(GitService gitService,
-            DeploymentRepository deploymentRepository) {
+            DeploymentRepository deploymentRepository,
+            DockerService dockerService) {
         this.gitService = gitService;
         this.deploymentRepository = deploymentRepository;
+        this.dockerService = dockerService;
     }
 
-    @PostMapping("/prepare")
-    public ResponseEntity<String> prepareDeployment(@RequestBody DeployRequest request) {
-        if (request.getRepoUrl() == null || request.getRepoUrl().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Error: GitHub URL cannot be empty.");
+    @PostMapping
+    public ResponseEntity<String> triggerDeployment(
+            @RequestBody DeployRequest request) {
+        if (request.getRepoUrl() == null
+                || request.getRepoUrl().trim().isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body("Error: GitHub URL cannot be empty.");
         }
 
-        // Create the DB record FIRST
         Deployment deployment = new Deployment();
         deployment.setRepoUrl(request.getRepoUrl());
         Deployment saved = deploymentRepository.save(deployment);
 
-        System.out.println("🚀 Deployment prepared for: " + request.getRepoUrl());
+        System.out.println("🚀 Deployment queued for: " + request.getRepoUrl());
         System.out.println("   DB record created with ID: " + saved.getId());
 
-        return ResponseEntity.ok(saved.getId().toString());
-    }
+        gitService.deploy(request.getRepoUrl(), saved.getId());
 
-    @PostMapping("/start/{id}")
-    public ResponseEntity<String> startDeployment(@PathVariable UUID id) {
-        return deploymentRepository.findById(id).map(d -> {
-            gitService.deploy(d.getRepoUrl(), d.getId());
-            return ResponseEntity.ok("Deployment started");
-        }).orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.accepted()
+                .body("Deployment queued. ID: " + saved.getId());
     }
 
     @GetMapping
@@ -59,5 +60,18 @@ public class DeploymentController {
         return deploymentRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // Phase 4 — stop a running deployment
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> stopDeployment(@PathVariable UUID id) {
+        return deploymentRepository.findById(id).map(deployment -> {
+            if (deployment.getContainerId() != null) {
+                dockerService.stopContainer(deployment.getContainerId());
+            }
+            deployment.setStatus(Deployment.DeploymentStatus.STOPPED);
+            deploymentRepository.save(deployment);
+            return ResponseEntity.ok("Deployment stopped: " + id);
+        }).orElse(ResponseEntity.notFound().build());
     }
 }
