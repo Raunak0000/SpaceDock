@@ -13,20 +13,17 @@ import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class DockerService {
 
     private final DockerClient dockerClient;
-    private final AtomicInteger nextPort = new AtomicInteger(4000);
 
     public DockerService() {
         var config = DefaultDockerClientConfig.createDefaultConfigBuilder().build();
@@ -74,12 +71,12 @@ public class DockerService {
     }
 
     public RunResult runContainer(String imageTag) {
-        // Find a free port — never collide with an already-running container
-        int hostPort = findFreePort();
         ExposedPort containerPort = ExposedPort.tcp(8080);
 
+        // 1. Bind to port 0. This delegates port allocation entirely to the Docker
+        // Engine.
         Ports portBindings = new Ports();
-        portBindings.bind(containerPort, Ports.Binding.bindPort(hostPort));
+        portBindings.bind(containerPort, Ports.Binding.bindPort(0));
 
         HostConfig hostConfig = HostConfig.newHostConfig()
                 .withPortBindings(portBindings);
@@ -90,29 +87,30 @@ public class DockerService {
                 .exec()
                 .getId();
 
+        // 2. Start the container
         dockerClient.startContainerCmd(containerId).exec();
 
-        System.out.println("🚀 Container running on port " + hostPort);
+        // 3. Inspect the running container to ask Docker which port it actually
+        // assigned
+        var inspectInfo = dockerClient.inspectContainerCmd(containerId).exec();
+
+        Ports.Binding[] assignedBindings = inspectInfo.getNetworkSettings()
+                .getPorts()
+                .getBindings()
+                .get(containerPort);
+
+        if (assignedBindings == null || assignedBindings.length == 0) {
+            dockerClient.stopContainerCmd(containerId).exec();
+            throw new RuntimeException("Docker failed to assign a host port to the container.");
+        }
+
+        // Parse the dynamically assigned port
+        int assignedHostPort = Integer.parseInt(assignedBindings[0].getHostPortSpec());
+
+        System.out.println("🚀 Container running on dynamically assigned port " + assignedHostPort);
         System.out.println("   Container ID: " + containerId);
 
-        return new RunResult(containerId, hostPort);
-    }
-
-    // Increments until it finds a port nothing is currently bound to
-    private int findFreePort() {
-        int port = nextPort.getAndIncrement();
-        while (!isPortFree(port)) {
-            port = nextPort.getAndIncrement();
-        }
-        return port;
-    }
-
-    private boolean isPortFree(int port) {
-        try (ServerSocket s = new ServerSocket(port)) {
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
+        return new RunResult(containerId, assignedHostPort);
     }
 
     public void cleanupWorkspace(Path workspaceDir) {
