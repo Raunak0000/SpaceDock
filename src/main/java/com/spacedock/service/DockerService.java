@@ -19,6 +19,8 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import com.github.dockerjava.api.model.Container;
 
 @Service
 public class DockerService {
@@ -145,4 +147,12 @@ public class DockerService {
     public record RunResult(String containerId, int hostPort) {
     }
 
+    public Set<String> getRunningContainerIds() {
+        return dockerClient.listContainersCmd()
+                .withStatusFilter(Set.of("running"))
+                .exec()
+                .stream()
+                .map(Container::getId)
+                .collect(Collectors.toSet());
+    }
 }
