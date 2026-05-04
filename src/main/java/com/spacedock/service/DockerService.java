@@ -73,13 +73,21 @@ public class DockerService {
     public RunResult runContainer(String imageTag) {
         ExposedPort containerPort = ExposedPort.tcp(8080);
 
-        // 1. Bind to port 0. This delegates port allocation entirely to the Docker
-        // Engine.
         Ports portBindings = new Ports();
         portBindings.bind(containerPort, Ports.Binding.bindPort(0));
 
+        // --- NEW RESOURCE LIMITS ---
+        // 512 MB in bytes
+        long memoryLimit = 512L * 1024 * 1024;
+
+        // 1.0 CPU Core (Docker expects this in NanoCPUs: 1 core = 1,000,000,000)
+        long cpuLimit = 1_000_000_000L;
+
         HostConfig hostConfig = HostConfig.newHostConfig()
-                .withPortBindings(portBindings);
+                .withPortBindings(portBindings)
+                .withMemory(memoryLimit)
+                .withNanoCPUs(cpuLimit);
+        // ---------------------------
 
         String containerId = dockerClient.createContainerCmd(imageTag)
                 .withExposedPorts(containerPort)
