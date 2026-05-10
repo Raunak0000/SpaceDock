@@ -48,12 +48,10 @@ public class GitService {
             workspacePath = cloneRepository(repoUrl, deploymentId);
             logBroadcaster.broadcastLog(idStr, "✅ Clone complete");
 
-            // Dockerfile check
             // Runtime check
-if (!runtimeDetector.isValidWorkspace(workspacePath)) { // <-- New method name
-    logBroadcaster.broadcastLog(idStr,
-            "❌ No valid runtime found (Dockerfile, package.json, etc.). Deployment aborted.");,
-                        "❌ No Dockerfile found. Deployment aborted.");
+            if (!runtimeDetector.isValidWorkspace(workspacePath)) { // <-- New method name
+                logBroadcaster.broadcastLog(idStr,
+                        "❌ No valid runtime found (Dockerfile, package.json, etc.). Deployment aborted.");
                 updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
                 dockerService.cleanupWorkspace(workspacePath);
                 return;
