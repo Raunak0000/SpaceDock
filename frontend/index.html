@@ -147,27 +147,29 @@
             clearLogs();
             document.getElementById('status').textContent = 'Connecting...';
 
-            // Step 1 — get a deployment ID first without starting the pipeline
-            fetch('http://localhost:8082/api/deployments/prepare', {
+            // Hit the single API endpoint your Spring Boot controller actually exposes
+            fetch('http://localhost:8082/api/deployments', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ repoUrl })
             })
-                .then(res => res.text())
-                .then(deploymentId => {
-                    document.getElementById('status').textContent =
-                        'Deployment ID: ' + deploymentId;
+                .then(res => {
+                    if (!res.ok) throw new Error("Backend returned " + res.status);
+                    return res.text();
+                })
+                .then(responseText => {
+                    // The backend returns: "Deployment queued. ID: <UUID>"
+                    // We split the string to extract just the UUID for the WebSockets
+                    const deploymentId = responseText.split("ID: ")[1].trim();
 
-                    // Step 2 — subscribe FIRST
+                    document.getElementById('status').textContent = 'Deployment ID: ' + deploymentId;
+
+                    // Subscribe to the WebSocket topic using the clean UUID
                     subscribeToLogs(deploymentId);
-
-                    // Step 3 — small delay to ensure subscription is registered,
-                    // then trigger the actual pipeline
-                    setTimeout(() => {
-                        fetch('http://localhost:8082/api/deployments/start/' + deploymentId, {
-                            method: 'POST'
-                        });
-                    }, 500);
+                })
+                .catch(error => {
+                    document.getElementById('status').textContent = 'Deployment Failed';
+                    appendLog('❌ Error reaching SpaceDock: ' + error.message, 'error');
                 });
         }
 
