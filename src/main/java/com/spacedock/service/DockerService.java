@@ -11,8 +11,10 @@ import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -40,36 +42,63 @@ public class DockerService {
     }
 
     // Phase 3 — streams every Docker build log line to the browser
-    public String buildImage(File projectDir, UUID deploymentId,
-            LogBroadcaster logBroadcaster) {
+    public String buildImage(File projectDir, UUID deploymentId, LogBroadcaster logBroadcaster) {
         String imageTag = "spacedock-" + deploymentId.toString();
         String idStr = deploymentId.toString();
 
-        System.out.println("🔨 Building image: " + imageTag);
-        logBroadcaster.broadcastLog(idStr, "🔨 Starting Docker build...");
+        File dockerfile = new File(projectDir, "Dockerfile");
 
-        dockerClient.buildImageCmd(projectDir)
-                .withTags(Set.of(imageTag))
-                .exec(new BuildImageResultCallback() {
-                    @Override
-                    public void onNext(BuildResponseItem item) {
-                        // Called for every line Docker outputs during the build
-                        if (item.getStream() != null) {
-                            String line = item.getStream().trim();
-                            if (!line.isEmpty()) {
-                                System.out.println("[BUILD] " + line);
-                                // This is what streams to the browser in real time
-                                logBroadcaster.broadcastLog(idStr, line);
+        try {
+            if (dockerfile.exists()) {
+                // PATH 1: Traditional Dockerfile Build (Your existing logic)
+                System.out.println("🔨 Dockerfile detected. Building natively...");
+                logBroadcaster.broadcastLog(idStr, "🔨 Dockerfile detected. Starting native Docker build...");
+
+                dockerClient.buildImageCmd(projectDir)
+                        .withTags(Set.of(imageTag))
+                        .exec(new BuildImageResultCallback() {
+                            @Override
+                            public void onNext(BuildResponseItem item) {
+                                if (item.getStream() != null && !item.getStream().trim().isEmpty()) {
+                                    logBroadcaster.broadcastLog(idStr, item.getStream().trim());
+                                }
+                                super.onNext(item);
                             }
-                        }
-                        super.onNext(item);
-                    }
-                })
-                .awaitImageId();
+                        })
+                        .awaitImageId();
 
-        System.out.println("✅ Image built: " + imageTag);
-        logBroadcaster.broadcastLog(idStr, "✅ Image built successfully!");
-        return imageTag;
+            } else {
+                // PATH 2: Zero-Config Nixpacks Build
+                System.out.println("🪄 No Dockerfile found. Engaging Nixpacks Auto-Build...");
+                logBroadcaster.broadcastLog(idStr, "🪄 No Dockerfile found. Analyzing source code with Nixpacks...");
+
+                ProcessBuilder pb = new ProcessBuilder(
+                        "nixpacks", "build", projectDir.getAbsolutePath(), "--name", imageTag);
+                pb.redirectErrorStream(true); // Merge stderr into stdout
+                Process process = pb.start();
+
+                // Stream Nixpacks logs directly to the WebSockets browser frontend
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        System.out.println("[NIXPACKS] " + line);
+                        logBroadcaster.broadcastLog(idStr, "📦 " + line);
+                    }
+                }
+
+                int exitCode = process.waitFor();
+                if (exitCode != 0) {
+                    throw new RuntimeException("Nixpacks build failed with exit code " + exitCode);
+                }
+            }
+
+            System.out.println("✅ Image built successfully: " + imageTag);
+            logBroadcaster.broadcastLog(idStr, "✅ Image built successfully!");
+            return imageTag;
+
+        } catch (Exception e) {
+            throw new RuntimeException("Build process failed: " + e.getMessage(), e);
+        }
     }
 
     public RunResult runContainer(String imageTag) {
