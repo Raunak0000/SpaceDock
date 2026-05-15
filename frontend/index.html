@@ -123,9 +123,18 @@
         <button onclick="deploy()">Deploy</button>
     </div>
 
-    <div id="status">Waiting for deployment...</div>
-    <div id="log-container"></div>
-    <div id="live-url"></div>
+    <div style="margin-bottom: 24px;">
+        <h3 style="color: #8b949e; font-size: 14px; margin-bottom: 8px;">Environment Variables (Optional)</h3>
+        <div id="env-vars-container">
+            <div class="row env-row" style="margin-bottom: 8px;">
+                <input type="text" class="env-key" placeholder="API_KEY" style="flex: 0.4;" />
+                <input type="text" class="env-value" placeholder="your_secret_value" />
+            </div>
+        </div>
+        <button onclick="addEnvRow()"
+            style="background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 6px 12px; font-size: 12px;">+
+            Add Variable</button>
+    </div>
 
     <script>
         let stompClient = null;

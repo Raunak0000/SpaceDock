@@ -39,15 +39,14 @@ public class DeploymentController {
 
         Deployment deployment = new Deployment();
         deployment.setRepoUrl(request.getRepoUrl());
+
+        // Save the environment variables (or an empty map if none provided)
+        if (request.getEnvVars() != null) {
+            deployment.setEnvironmentVariables(request.getEnvVars());
+        }
+
         Deployment saved = deploymentRepository.save(deployment);
-
-        System.out.println("🚀 Deployment queued for: " + request.getRepoUrl());
-        System.out.println("   DB record created with ID: " + saved.getId());
-
-        gitService.deploy(request.getRepoUrl(), saved.getId());
-
-        return ResponseEntity.accepted()
-                .body("Deployment queued. ID: " + saved.getId());
+        return ResponseEntity.ok("Deployment triggered: " + saved.getId());
     }
 
     @GetMapping

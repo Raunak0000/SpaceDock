@@ -18,7 +18,10 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -101,17 +104,12 @@ public class DockerService {
         }
     }
 
-    public RunResult runContainer(String imageTag) {
+    public RunResult runContainer(String imageTag, Map<String, String> envVars) {
         ExposedPort containerPort = ExposedPort.tcp(8080);
-
         Ports portBindings = new Ports();
         portBindings.bind(containerPort, Ports.Binding.bindPort(0));
 
-        // --- NEW RESOURCE LIMITS ---
-        // 512 MB in bytes
         long memoryLimit = 512L * 1024 * 1024;
-
-        // 1.0 CPU Core (Docker expects this in NanoCPUs: 1 core = 1,000,000,000)
         long cpuLimit = 1_000_000_000L;
 
         HostConfig hostConfig = HostConfig.newHostConfig()
@@ -119,10 +117,17 @@ public class DockerService {
                 .withMemory(memoryLimit)
                 .withNanoCPUs(cpuLimit);
         // ---------------------------
+        List<String> envList = new ArrayList<>();
+        if (envVars != null) {
+            for (Map.Entry<String, String> entry : envVars.entrySet()) {
+                envList.add(entry.getKey() + "=" + entry.getValue());
+            }
+        }
 
         String containerId = dockerClient.createContainerCmd(imageTag)
                 .withExposedPorts(containerPort)
                 .withHostConfig(hostConfig)
+                .withEnv(envList) // <-- INJECT SECRETS HERE
                 .exec()
                 .getId();
 

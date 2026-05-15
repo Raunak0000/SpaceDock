@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -67,9 +68,10 @@ public class GitService {
             logBroadcaster.broadcastLog(idStr, "🧹 Workspace cleaned up");
 
             // RUN
-            DockerService.RunResult result = dockerService.runContainer(imageTag);
-            updateStatusRunning(deploymentId,
-                    result.containerId(), result.hostPort());
+            Deployment deployment = deploymentRepository.findById(deploymentId).orElseThrow();
+            Map<String, String> envVars = deployment.getEnvironmentVariables();
+
+            DockerService.RunResult result = dockerService.runContainer(imageTag, envVars);
 
             // Register subdomain route in Caddy
             proxyService.registerRoute(idStr, result.hostPort());
@@ -101,8 +103,7 @@ public class GitService {
         });
     }
 
-    private void updateStatusRunning(UUID deploymentId,
-            String containerId, int port) {
+    private void updateStatusRunning(UUID deploymentId, String containerId, int port) {
         deploymentRepository.findById(deploymentId).ifPresent(d -> {
             d.setStatus(Deployment.DeploymentStatus.RUNNING);
             d.setContainerId(containerId);

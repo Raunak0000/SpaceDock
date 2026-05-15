@@ -3,6 +3,7 @@ package com.spacedock.model;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -14,8 +15,13 @@ public class Deployment {
     @Column(name = "env_value")
     private Map<String, String> environmentVariables;
 
-    public Map<String, String> getEnvironmentVariables() { return environmentVariables; }
-    public void setEnvironmentVariables(Map<String, String> environmentVariables) { this.environmentVariables = environmentVariables; }
+    public Map<String, String> getEnvironmentVariables() {
+        return environmentVariables;
+    }
+
+    public void setEnvironmentVariables(Map<String, String> environmentVariables) {
+        this.environmentVariables = environmentVariables;
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
