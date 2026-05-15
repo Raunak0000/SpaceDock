@@ -8,6 +8,15 @@ import java.util.UUID;
 @Entity
 @Table(name = "deployments")
 public class Deployment {
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "deployment_env_vars", joinColumns = @JoinColumn(name = "deployment_id"))
+    @MapKeyColumn(name = "env_key")
+    @Column(name = "env_value")
+    private Map<String, String> environmentVariables;
+
+    public Map<String, String> getEnvironmentVariables() { return environmentVariables; }
+    public void setEnvironmentVariables(Map<String, String> environmentVariables) { this.environmentVariables = environmentVariables; }
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
