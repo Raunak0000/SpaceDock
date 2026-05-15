@@ -149,18 +149,39 @@
             });
         }
 
+        function addEnvRow() {
+            const container = document.getElementById('env-vars-container');
+            const row = document.createElement('div');
+            row.className = 'row env-row';
+            row.style.marginBottom = '8px';
+            row.innerHTML = `
+                <input type="text" class="env-key" placeholder="KEY" style="flex: 0.4;" />
+                <input type="text" class="env-value" placeholder="VALUE" />
+            `;
+            container.appendChild(row);
+        }
+
         function deploy() {
             const repoUrl = document.getElementById('repo-url').value.trim();
             if (!repoUrl) return;
 
+            // Extract Environment Variables
+            const envVars = {};
+            document.querySelectorAll('.env-row').forEach(row => {
+                const key = row.querySelector('.env-key').value.trim();
+                const value = row.querySelector('.env-value').value.trim();
+                if (key && value) {
+                    envVars[key] = value;
+                }
+            });
+
             clearLogs();
             document.getElementById('status').textContent = 'Connecting...';
 
-            // Hit the single API endpoint your Spring Boot controller actually exposes
             fetch('http://localhost:8082/api/deployments', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ repoUrl })
+                body: JSON.stringify({ repoUrl: repoUrl, envVars: envVars })
             })
                 .then(res => {
                     if (!res.ok) throw new Error("Backend returned " + res.status);
