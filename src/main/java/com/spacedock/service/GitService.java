@@ -73,6 +73,9 @@ public class GitService {
 
             DockerService.RunResult result = dockerService.runContainer(imageTag, envVars);
 
+            // Persist container info and mark as RUNNING
+            updateStatusRunning(deploymentId, result.containerId(), result.hostPort());
+
             // Register subdomain route in Caddy
             proxyService.registerRoute(idStr, result.hostPort());
 

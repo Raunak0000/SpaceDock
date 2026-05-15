@@ -46,7 +46,11 @@ public class DeploymentController {
         }
 
         Deployment saved = deploymentRepository.save(deployment);
-        return ResponseEntity.ok("Deployment triggered: " + saved.getId());
+
+        // Kick off the async deploy pipeline
+        gitService.deploy(saved.getRepoUrl(), saved.getId());
+
+        return ResponseEntity.ok("Deployment queued. ID: " + saved.getId());
     }
 
     @GetMapping
