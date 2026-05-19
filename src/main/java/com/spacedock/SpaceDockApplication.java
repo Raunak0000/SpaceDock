@@ -11,6 +11,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class SpaceDockApplication {
     public static void main(String[] args) {
         SpringApplication.run(SpaceDockApplication.class, args);
-        System.out.println("SpaceDock is online!! ");
+        System.out.println("SpaceDock is online!!");
     }
 }

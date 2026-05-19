@@ -182,11 +182,11 @@ public class DockerService {
     }
 
     public Set<String> getRunningContainerIds() {
-        return dockerClient.listContainersCmd()
-                .withStatusFilter(Set.of("running"))
-                .exec()
-                .stream()
-                .map(Container::getId)
-                .collect(Collectors.toSet());
-    }
+    return dockerClient.listContainersCmd()
+            .withStatusFilter(List.of("running"))
+            .exec()
+            .stream()
+            .map(container -> container.getId())
+            .collect(java.util.stream.Collectors.toSet());
+}
 }
