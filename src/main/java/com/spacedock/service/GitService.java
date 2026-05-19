@@ -50,7 +50,7 @@ public class GitService {
             logBroadcaster.broadcastLog(idStr, "✅ Clone complete");
 
             // Runtime check
-            if (!runtimeDetector.isValidWorkspace(workspacePath)) { // <-- New method name
+            if (!runtimeDetector.hasDockerfile(workspacePath)) { // <-- New method name
                 logBroadcaster.broadcastLog(idStr,
                         "❌ No valid runtime found (Dockerfile, package.json, etc.). Deployment aborted.");
                 updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
