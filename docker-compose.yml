@@ -18,6 +18,8 @@ services:
     ports:
       - "80:80"
       - "2019:2019"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - caddy-data:/data
       - ./Caddyfile:/etc/caddy/Caddyfile
