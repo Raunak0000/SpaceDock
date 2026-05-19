@@ -21,7 +21,7 @@ public class ProxyService {
                     "match": [{ "host": ["%s"] }],
                     "handle": [{
                         "handler": "reverse_proxy",
-                        "upstreams": [{ "dial": "localhost:%d" }]
+                        "upstreams": [{ "dial": "172.17.0.1:%d" }]
                     }]
                 }
                 """.formatted(subdomain, port);
