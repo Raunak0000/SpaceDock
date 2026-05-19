@@ -15,7 +15,9 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: spacedock-caddy
-    network_mode: host
+    ports:
+      - "80:80"
+      - "2019:2019"
     volumes:
       - caddy-data:/data
       - ./Caddyfile:/etc/caddy/Caddyfile
