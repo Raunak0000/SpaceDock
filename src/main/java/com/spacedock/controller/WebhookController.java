@@ -40,6 +40,13 @@ public class WebhookController {
             // 3. Create a new Deployment record in PostgreSQL to track this build
             Deployment deployment = new Deployment();
             deployment.setRepoUrl(repoUrl);
+
+            // --- INJECT AUTOMATED SECRETS HERE ---
+            Map<String, String> autoSecrets = new java.util.HashMap<>();
+            autoSecrets.put("SECRET_MESSAGE", "Webhook automation injected this secret! 🎉");
+            deployment.setEnvironmentVariables(autoSecrets);
+            // -------------------------------------
+
             Deployment saved = deploymentRepository.save(deployment);
 
             // 4. Trigger your existing asynchronous build pipeline
