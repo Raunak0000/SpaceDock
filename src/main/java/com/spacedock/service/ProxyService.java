@@ -69,7 +69,7 @@ public class ProxyService {
                     "match": [{ "host": ["%s", "%s"] }],
                     "handle": [{
                         "handler": "reverse_proxy",
-                        "upstreams": [{ "dial": "localhost:%d" }]
+                        "upstreams": [{ "dial": "127.0.0.1:%d" }] 
                     }]
                 }
                 """.formatted(uuidSubdomain, projectSubdomain, port);
