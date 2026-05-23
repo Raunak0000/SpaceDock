@@ -50,7 +50,7 @@ public class GitService {
             logBroadcaster.broadcastLog(idStr, "✅ Clone complete");
 
             // Runtime check
-            if (!runtimeDetector.hasDockerfile(workspacePath)) { // <-- New method name
+            if (!runtimeDetector.isValidWorkspace(workspacePath)) { // 
                 logBroadcaster.broadcastLog(idStr,
                         "❌ No valid runtime found (Dockerfile, package.json, etc.). Deployment aborted.");
                 updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
@@ -68,22 +68,35 @@ public class GitService {
             logBroadcaster.broadcastLog(idStr, "🧹 Workspace cleaned up");
 
             // RUN
+            // RUN
             Deployment deployment = deploymentRepository.findById(deploymentId).orElseThrow();
             Map<String, String> envVars = deployment.getEnvironmentVariables();
 
             DockerService.RunResult result = dockerService.runContainer(imageTag, envVars);
 
+            // --- ZERO DOWNTIME CLEANUP: Stop older versions of this project ---
+            deploymentRepository.findAll().stream()
+                    .filter(d -> d.getStatus() == Deployment.DeploymentStatus.RUNNING)
+                    .filter(d -> d.getRepoUrl().equals(repoUrl))
+                    .filter(d -> !d.getId().equals(deploymentId)) // Don't kill the one we just started!
+                    .forEach(old -> {
+                        dockerService.stopContainer(old.getContainerId());
+                        old.setStatus(Deployment.DeploymentStatus.STOPPED);
+                        deploymentRepository.save(old);
+                        logBroadcaster.broadcastLog(idStr, "🛑 Stopped previous version (Port: " + old.getPortNumber() + ")");
+                    });
+
             // Persist container info and mark as RUNNING
             updateStatusRunning(deploymentId, result.containerId(), result.hostPort());
 
-            // Register subdomain route in Caddy
-            proxyService.registerRoute(idStr, result.hostPort());
+            // --- STATIC ROUTING ---
+            String projectName = extractProjectName(repoUrl);
+            proxyService.registerRoute(idStr, projectName, result.hostPort());
 
-            // Broadcast the clean subdomain URL
-            String liveUrl = "http://" + idStr + ".localhost";
-            logBroadcaster.broadcastLog(idStr,
-                    "🌍 Deployment live at " + liveUrl);
-            System.out.println("🌍 Deployment live at " + liveUrl);
+            // Broadcast the clean, permanent subdomain URL
+            String liveUrl = "http://" + projectName + ".localhost";
+            logBroadcaster.broadcastLog(idStr, "🌍 Static Deployment live at " + liveUrl);
+            System.out.println("🌍 Static Deployment live at " + liveUrl);
 
         } catch (Exception e) {
             System.err.println("❌ Deployment pipeline failed: " + e.getMessage());
@@ -131,5 +144,12 @@ public class GitService {
             System.out.println("✅ Clone complete");
         }
         return targetDir.toPath();
+    }
+
+    // Extracts "spacedock-test-app" from the GitHub URL
+    private String extractProjectName(String repoUrl) {
+        String[] parts = repoUrl.split("/");
+        String rawName = parts[parts.length - 1];
+        return rawName.replace(".git", "").toLowerCase();
     }
 }
