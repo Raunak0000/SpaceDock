@@ -41,11 +41,38 @@ public class DeploymentController {
         if (request.getRepoUrl() == null
                 || request.getRepoUrl().trim().isEmpty()) {
             return ResponseEntity.badRequest()
-                    .body("Error: GitHub URL cannot be empty.");
+                    .body("Error: Repository URL cannot be empty.");
+        }
+
+        // ── SSRF Protection (fix #4) ──
+        // Block dangerous URL schemes and internal network targets
+        String repoUrl = request.getRepoUrl().trim();
+        String urlLower = repoUrl.toLowerCase();
+
+        if (!urlLower.startsWith("https://")) {
+            return ResponseEntity.badRequest()
+                    .body("Error: Only HTTPS repository URLs are allowed.");
+        }
+
+        // Block internal/private hostnames and IPs
+        String hostPart = urlLower.replace("https://", "").split("/")[0].split(":")[0];
+        if (hostPart.equals("localhost")
+                || hostPart.equals("127.0.0.1")
+                || hostPart.startsWith("192.168.")
+                || hostPart.startsWith("10.")
+                || hostPart.startsWith("172.16.") || hostPart.startsWith("172.17.")
+                || hostPart.startsWith("172.18.") || hostPart.startsWith("172.19.")
+                || hostPart.startsWith("172.2") || hostPart.startsWith("172.30.")
+                || hostPart.startsWith("172.31.")
+                || hostPart.equals("0.0.0.0")
+                || hostPart.endsWith(".internal")
+                || hostPart.endsWith(".local")) {
+            return ResponseEntity.badRequest()
+                    .body("Error: Internal/private URLs are not allowed.");
         }
 
         Deployment deployment = new Deployment();
-        deployment.setRepoUrl(request.getRepoUrl());
+        deployment.setRepoUrl(repoUrl);
 
         // Encrypt environment variable values before storing in the database
         if (request.getEnvVars() != null && !request.getEnvVars().isEmpty()) {

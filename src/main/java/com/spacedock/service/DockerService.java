@@ -3,6 +3,7 @@ package com.spacedock.service;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.BuildImageResultCallback;
 import com.github.dockerjava.api.model.BuildResponseItem;
+import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.ExposedPort;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Ports;
@@ -15,6 +16,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -27,6 +29,10 @@ import java.util.UUID;
 
 @Service
 public class DockerService {
+
+    private static final String WORKSPACE_ROOT =
+            Path.of(System.getProperty("user.dir"), "workspaces")
+                    .toAbsolutePath().normalize().toString();
 
     private final DockerClient dockerClient;
 
@@ -47,16 +53,22 @@ public class DockerService {
         String imageTag = "spacedock-" + deploymentId.toString();
         String idStr = deploymentId.toString();
 
+        // Validate the project directory is within the workspace root (fix #7)
+        validatePathWithinWorkspace(projectDir.toPath());
+
         File dockerfile = new File(projectDir, "Dockerfile");
 
         try {
             if (dockerfile.exists()) {
-                // PATH 1: Traditional Dockerfile Build (Your existing logic)
+                // PATH 1: Traditional Dockerfile Build
                 System.out.println("🔨 Dockerfile detected. Building natively...");
                 logBroadcaster.broadcastLog(idStr, "🔨 Dockerfile detected. Starting native Docker build...");
 
                 dockerClient.buildImageCmd(projectDir)
                         .withTags(Set.of(imageTag))
+                        // Build with --network=none to prevent Dockerfile RUN commands
+                        // from making network requests during build
+                        .withNetworkMode("none")
                         .exec(new BuildImageResultCallback() {
                             @Override
                             public void onNext(BuildResponseItem item) {
@@ -73,8 +85,10 @@ public class DockerService {
                 System.out.println("🪄 No Dockerfile found. Engaging Nixpacks Auto-Build...");
                 logBroadcaster.broadcastLog(idStr, "🪄 No Dockerfile found. Analyzing source code with Nixpacks...");
 
+                // Resolve canonical path to prevent symlink escapes (fix #7)
+                String canonicalPath = projectDir.getCanonicalPath();
                 ProcessBuilder pb = new ProcessBuilder(
-                        "nixpacks", "build", projectDir.getAbsolutePath(), "--name", imageTag);
+                        "nixpacks", "build", canonicalPath, "--name", imageTag);
                 pb.redirectErrorStream(true); // Merge stderr into stdout
                 Process process = pb.start();
 
@@ -110,10 +124,18 @@ public class DockerService {
         long memoryLimit = 512L * 1024 * 1024;
         long cpuLimit = 1_000_000_000L;
 
+        // ── Container Security Hardening (fix #6) ──
         HostConfig hostConfig = HostConfig.newHostConfig()
                 .withPortBindings(portBindings)
                 .withMemory(memoryLimit)
-                .withNanoCPUs(cpuLimit);
+                .withNanoCPUs(cpuLimit)
+                // Drop ALL Linux capabilities — container gets zero elevated privileges
+                .withCapDrop(Capability.ALL)
+                // Prevent processes from gaining new privileges (e.g., via setuid binaries)
+                .withSecurityOpts(List.of("no-new-privileges"))
+                // Limit number of processes to prevent fork bombs
+                .withPidsLimit(100L);
+
         // ---------------------------
         List<String> envList = new ArrayList<>();
         if (envVars != null) {
@@ -125,7 +147,7 @@ public class DockerService {
         String containerId = dockerClient.createContainerCmd(imageTag)
                 .withExposedPorts(containerPort)
                 .withHostConfig(hostConfig)
-                .withEnv(envList) // <-- INJECT SECRETS HERE
+                .withEnv(envList)
                 .exec()
                 .getId();
 
@@ -155,10 +177,30 @@ public class DockerService {
         return new RunResult(containerId, assignedHostPort);
     }
 
+    /**
+     * Safely cleans up a workspace directory without following symlinks (fix #9).
+     * Every path is validated to be within the workspace root before deletion.
+     */
     public void cleanupWorkspace(Path workspaceDir) {
         try {
-            Files.walk(workspaceDir)
+            // Resolve to canonical path to detect symlink escapes
+            Path canonicalDir = workspaceDir.toRealPath();
+            if (!canonicalDir.startsWith(WORKSPACE_ROOT)) {
+                System.err.println("⚠️ SECURITY: Refusing to clean path outside workspace: " + canonicalDir);
+                return;
+            }
+
+            // Walk WITHOUT following symlinks — only delete real files within the workspace
+            Files.walk(canonicalDir) // default: no FOLLOW_LINKS
                     .sorted(Comparator.reverseOrder())
+                    .filter(path -> {
+                        // Double-check every individual path is within workspace root
+                        try {
+                            return path.toRealPath().startsWith(WORKSPACE_ROOT);
+                        } catch (IOException e) {
+                            return false; // Skip paths we can't resolve
+                        }
+                    })
                     .map(Path::toFile)
                     .forEach(File::delete);
             System.out.println("🧹 Workspace cleaned up: " + workspaceDir);
@@ -180,11 +222,27 @@ public class DockerService {
     }
 
     public Set<String> getRunningContainerIds() {
-    return dockerClient.listContainersCmd()
-            .withStatusFilter(List.of("running"))
-            .exec()
-            .stream()
-            .map(container -> container.getId())
-            .collect(java.util.stream.Collectors.toSet());
-}
+        return dockerClient.listContainersCmd()
+                .withStatusFilter(List.of("running"))
+                .exec()
+                .stream()
+                .map(container -> container.getId())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    /**
+     * Validates that a path is within the workspace root directory.
+     * Prevents path traversal via symlinks or relative paths.
+     */
+    private void validatePathWithinWorkspace(Path path) {
+        try {
+            String canonical = path.toFile().getCanonicalPath();
+            if (!canonical.startsWith(WORKSPACE_ROOT)) {
+                throw new SecurityException(
+                        "Path escapes workspace root: " + canonical);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Cannot resolve path: " + path, e);
+        }
+    }
 }
