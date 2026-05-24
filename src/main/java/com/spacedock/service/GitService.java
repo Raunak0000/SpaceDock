@@ -2,14 +2,17 @@ package com.spacedock.service;
 
 import com.spacedock.model.Deployment;
 import com.spacedock.repository.DeploymentRepository;
+import com.spacedock.util.CryptoUtil;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,17 +26,20 @@ public class GitService {
     private final DeploymentRepository deploymentRepository;
     private final LogBroadcaster logBroadcaster;
     private final ProxyService proxyService;
+    private final CryptoUtil cryptoUtil;
 
     public GitService(RuntimeDetector runtimeDetector,
             DockerService dockerService,
             DeploymentRepository deploymentRepository,
             LogBroadcaster logBroadcaster,
-            ProxyService proxyService) {
+            ProxyService proxyService,
+            @Value("${spacedock.encryption-key}") String encryptionKey) {
         this.runtimeDetector = runtimeDetector;
         this.dockerService = dockerService;
         this.deploymentRepository = deploymentRepository;
         this.logBroadcaster = logBroadcaster;
         this.proxyService = proxyService;
+        this.cryptoUtil = new CryptoUtil(encryptionKey);
     }
 
     @Async
@@ -67,12 +73,17 @@ public class GitService {
             dockerService.cleanupWorkspace(workspacePath);
             logBroadcaster.broadcastLog(idStr, "🧹 Workspace cleaned up");
 
-            // RUN
-            // RUN
+            // RUN — decrypt env vars before injecting into the container
             Deployment deployment = deploymentRepository.findById(deploymentId).orElseThrow();
-            Map<String, String> envVars = deployment.getEnvironmentVariables();
+            Map<String, String> encryptedVars = deployment.getEnvironmentVariables();
+            Map<String, String> decryptedVars = new HashMap<>();
+            if (encryptedVars != null) {
+                for (Map.Entry<String, String> entry : encryptedVars.entrySet()) {
+                    decryptedVars.put(entry.getKey(), cryptoUtil.decrypt(entry.getValue()));
+                }
+            }
 
-            DockerService.RunResult result = dockerService.runContainer(imageTag, envVars);
+            DockerService.RunResult result = dockerService.runContainer(imageTag, decryptedVars);
 
             // --- ZERO DOWNTIME CLEANUP: Stop older versions of this project ---
             deploymentRepository.findAll().stream()

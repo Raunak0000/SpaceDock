@@ -1,5 +1,6 @@
 package com.spacedock.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
@@ -9,10 +10,11 @@ import java.util.UUID;
 @Entity
 @Table(name = "deployments")
 public class Deployment {
+    @JsonIgnore
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "deployment_env_vars", joinColumns = @JoinColumn(name = "deployment_id"))
     @MapKeyColumn(name = "env_key")
-    @Column(name = "env_value")
+    @Column(name = "env_value", length = 1024)
     private Map<String, String> environmentVariables;
 
     public Map<String, String> getEnvironmentVariables() {

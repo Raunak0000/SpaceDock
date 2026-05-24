@@ -43,7 +43,9 @@ public class SecurityConfig {
                         .requestMatchers("/ws/**").permitAll()
                         // Static frontend files
                         .requestMatchers("/", "/index.html", "/favicon.ico", "/*.css", "/*.js").permitAll()
-                        // Everything under /api/** requires authentication via API key
+                        // Webhooks use their own HMAC signature auth — exempt from API key
+                        .requestMatchers("/api/webhooks/**").permitAll()
+                        // Everything else under /api/** requires authentication via API key
                         .requestMatchers("/api/**").authenticated()
                         // Deny everything else by default
                         .anyRequest().denyAll()

@@ -1,14 +1,19 @@
 package com.spacedock.controller;
 
 import com.spacedock.dto.DeployRequest;
+import com.spacedock.dto.DeploymentResponse;
 import com.spacedock.model.Deployment;
 import com.spacedock.repository.DeploymentRepository;
 import com.spacedock.service.DockerService;
 import com.spacedock.service.GitService;
+import com.spacedock.util.CryptoUtil;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -18,13 +23,16 @@ public class DeploymentController {
     private final GitService gitService;
     private final DeploymentRepository deploymentRepository;
     private final DockerService dockerService;
+    private final CryptoUtil cryptoUtil;
 
     public DeploymentController(GitService gitService,
             DeploymentRepository deploymentRepository,
-            DockerService dockerService) {
+            DockerService dockerService,
+            @Value("${spacedock.encryption-key}") String encryptionKey) {
         this.gitService = gitService;
         this.deploymentRepository = deploymentRepository;
         this.dockerService = dockerService;
+        this.cryptoUtil = new CryptoUtil(encryptionKey);
     }
 
     @PostMapping
@@ -39,9 +47,13 @@ public class DeploymentController {
         Deployment deployment = new Deployment();
         deployment.setRepoUrl(request.getRepoUrl());
 
-        // Save the environment variables (or an empty map if none provided)
-        if (request.getEnvVars() != null) {
-            deployment.setEnvironmentVariables(request.getEnvVars());
+        // Encrypt environment variable values before storing in the database
+        if (request.getEnvVars() != null && !request.getEnvVars().isEmpty()) {
+            Map<String, String> encrypted = new HashMap<>();
+            for (Map.Entry<String, String> entry : request.getEnvVars().entrySet()) {
+                encrypted.put(entry.getKey(), cryptoUtil.encrypt(entry.getValue()));
+            }
+            deployment.setEnvironmentVariables(encrypted);
         }
 
         Deployment saved = deploymentRepository.save(deployment);
@@ -53,13 +65,18 @@ public class DeploymentController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Deployment>> getAllDeployments() {
-        return ResponseEntity.ok(deploymentRepository.findAll());
+    public ResponseEntity<List<DeploymentResponse>> getAllDeployments() {
+        List<DeploymentResponse> responses = deploymentRepository.findAll()
+                .stream()
+                .map(DeploymentResponse::fromEntity)
+                .toList();
+        return ResponseEntity.ok(responses);
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Deployment> getDeployment(@PathVariable UUID id) {
+    public ResponseEntity<DeploymentResponse> getDeployment(@PathVariable UUID id) {
         return deploymentRepository.findById(id)
+                .map(DeploymentResponse::fromEntity)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
