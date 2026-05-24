@@ -1,5 +1,6 @@
 package com.spacedock.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -9,6 +10,10 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketsConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Value("${spacedock.allowed-origin}")
+    private String allowedOrigin;
+
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         // The in-memory broker handles topics prefixed with /topic
@@ -24,7 +29,7 @@ public class WebSocketsConfig implements WebSocketMessageBrokerConfigurer {
         // This is the URL the browser connects to to establish the WebSocket
         // SockJS is a fallback for browsers that don't support WebSocket natively
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(allowedOrigin)
                 .withSockJS();
     }
 }
