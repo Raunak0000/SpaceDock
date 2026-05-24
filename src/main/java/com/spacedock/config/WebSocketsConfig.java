@@ -26,10 +26,13 @@ public class WebSocketsConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        String[] origins = java.util.Arrays.stream(allowedOrigin.split(","))
+                .map(String::trim)
+                .toArray(String[]::new);
         // This is the URL the browser connects to to establish the WebSocket
         // SockJS is a fallback for browsers that don't support WebSocket natively
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns(allowedOrigin)
+                .setAllowedOriginPatterns(origins)
                 .withSockJS();
     }
 }
