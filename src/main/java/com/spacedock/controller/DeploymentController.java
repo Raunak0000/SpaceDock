@@ -13,7 +13,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/deployments")
-@CrossOrigin(origins = "*")
 public class DeploymentController {
 
     private final GitService gitService;
