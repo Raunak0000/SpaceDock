@@ -24,7 +24,7 @@ public class ProxyService {
         String configJson = """
                 {
                     "admin": {
-                        "listen": "0.0.0.0:2019"
+                    "listen": "127.0.0.1:2019"
                     },
                     "apps": {
                         "http": {
