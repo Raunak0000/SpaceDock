@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <title>SpaceDock</title>
-    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js" integrity="sha384-svdnwiXBL+Js+yUneJSRFy24NgGiOfDM/vkQl/vCeVrcbYD6yW8EwPr1FnxTEZsR" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js" integrity="sha384-clKAk7WaYNQiu/pGVWisoFQcSK2VL7YweoI1gim9/HFbMsRvD2ZtLWNoZoL4df65" crossorigin="anonymous"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -119,6 +119,7 @@
     <p>Paste a GitHub URL and click Deploy. Logs stream in real time.</p>
 
     <div class="row">
+        <input id="api-key" type="password" placeholder="API Key (X-API-Key)" style="flex: 0.25;" />
         <input id="repo-url" type="text" placeholder="https://github.com/your-username/your-repo" />
         <button onclick="deploy()">Deploy</button>
     </div>
@@ -145,6 +146,11 @@
 
         // Connect to SpaceDock's WebSocket on page load
         function connect() {
+            const savedKey = localStorage.getItem('spacedock_api_key');
+            if (savedKey) {
+                document.getElementById('api-key').value = savedKey;
+            }
+
             const socket = new SockJS('http://localhost:8082/ws');
             stompClient = Stomp.over(socket);
             stompClient.debug = null; // silence debug noise
@@ -167,7 +173,11 @@
 
         function deploy() {
             const repoUrl = document.getElementById('repo-url').value.trim();
+            const apiKey = document.getElementById('api-key').value.trim();
             if (!repoUrl) return;
+
+            // Save key
+            localStorage.setItem('spacedock_api_key', apiKey);
 
             // Extract Environment Variables
             const envVars = {};
@@ -184,7 +194,10 @@
 
             fetch('http://localhost:8082/api/deployments', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-API-Key': apiKey
+                },
                 body: JSON.stringify({ repoUrl: repoUrl, envVars: envVars })
             })
                 .then(res => {
