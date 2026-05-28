@@ -3,10 +3,52 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>SpaceDock</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpaceDock | Developer Console</title>
+    
+    <!-- Google Fonts: Inter for UI, JetBrains Mono for Console -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- SockJS and STOMP for live log streaming -->
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js" integrity="sha384-svdnwiXBL+Js+yUneJSRFy24NgGiOfDM/vkQl/vCeVrcbYD6yW8EwPr1FnxTEZsR" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js" integrity="sha384-clKAk7WaYNQiu/pGVWisoFQcSK2VL7YweoI1gim9/HFbMsRvD2ZtLWNoZoL4df65" crossorigin="anonymous"></script>
+
     <style>
+        /* --- Design Tokens & CSS Variables --- */
+        :root {
+            --bg-main: #06080f;
+            --bg-card: rgba(13, 17, 28, 0.7);
+            --bg-card-hover: rgba(20, 26, 40, 0.85);
+            --bg-terminal: #07090e;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            
+            --text-primary: #f0f3f6;
+            --text-secondary: #8b949e;
+            --text-muted: #586069;
+            
+            --color-violet: #7928ca;
+            --color-blue: #0070f3;
+            --color-gradient: linear-gradient(135deg, #7928ca 0%, #0070f3 100%);
+            --color-gradient-hover: linear-gradient(135deg, #8a3fd8 0%, #1a82f7 100%);
+            
+            --status-queued: #8b949e;
+            --status-cloning: #f5a623;
+            --status-building: #f5a623;
+            --status-running: #00ff87;
+            --status-failed: #ff0055;
+            --status-stopped: #8b949e;
+            
+            --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --shadow-glow-green: 0 0 12px rgba(0, 255, 135, 0.4);
+            --shadow-glow-yellow: 0 0 12px rgba(245, 166, 35, 0.4);
+            --shadow-glow-red: 0 0 12px rgba(255, 0, 85, 0.4);
+        }
+
+        /* --- Global Reset & Scrollbars --- */
         * {
             box-sizing: border-box;
             margin: 0;
@@ -14,172 +56,925 @@
         }
 
         body {
-            background: #0d1117;
-            color: #e6edf3;
-            font-family: 'Courier New', monospace;
-            padding: 32px;
+            background-color: var(--bg-main);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(121, 40, 202, 0.08) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(0, 112, 243, 0.08) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            min-height: 100vh;
+            padding: 24px;
+            line-height: 1.5;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        a {
+            color: var(--color-blue);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        a:hover {
+            color: #3b9eff;
+            text-decoration: underline;
+        }
+
+        /* --- Header Navigation --- */
+        header {
+            display: flex;
+            align-content: center;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            font-size: 28px;
         }
 
         h1 {
-            font-size: 24px;
-            margin-bottom: 8px;
-            color: #58a6ff;
+            font-size: 22px;
+            font-weight: 700;
+            background: var(--color-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
         }
 
-        p {
-            color: #8b949e;
-            margin-bottom: 24px;
-            font-size: 14px;
-        }
-
-        .row {
+        .status-pill {
             display: flex;
-            gap: 12px;
-            margin-bottom: 24px;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--status-queued);
+            display: inline-block;
+        }
+
+        .status-dot.connected {
+            background: var(--status-running);
+            box-shadow: var(--shadow-glow-green);
+            animation: pulse-green 2s infinite;
+        }
+
+        .status-dot.disconnected {
+            background: var(--status-failed);
+            box-shadow: var(--shadow-glow-red);
+        }
+
+        /* --- Dashboard Grid Layout --- */
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* --- Card Styles --- */
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--shadow-md);
+            margin-bottom: 20px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* --- Input Fields & Buttons --- */
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+        .input-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
         }
 
         input {
-            flex: 1;
-            background: #161b22;
-            border: 1px solid #30363d;
-            color: #e6edf3;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
             padding: 10px 14px;
-            border-radius: 6px;
+            border-radius: 8px;
             font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--color-blue);
+            box-shadow: 0 0 0 3px rgba(0, 112, 243, 0.15);
+        }
+
+        input::placeholder {
+            color: var(--text-muted);
         }
 
         button {
-            background: #238636;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
         }
 
         button:hover {
-            background: #2ea043;
+            background: rgba(255, 255, 255, 0.12);
+            border-color: var(--border-hover);
         }
 
-        #status {
-            font-size: 13px;
-            color: #8b949e;
-            margin-bottom: 12px;
-            min-height: 20px;
+        button:active {
+            transform: scale(0.98);
         }
 
-        #log-container {
-            background: #161b22;
-            border: 1px solid #30363d;
+        button.btn-primary {
+            background: var(--color-gradient);
+            border: none;
+            box-shadow: 0 4px 14px 0 rgba(121, 40, 202, 0.3);
+        }
+
+        button.btn-primary:hover {
+            background: var(--color-gradient-hover);
+            box-shadow: 0 6px 20px 0 rgba(121, 40, 202, 0.4);
+        }
+
+        button.btn-danger {
+            background: rgba(255, 0, 85, 0.1);
+            border: 1px solid rgba(255, 0, 85, 0.2);
+            color: #ff3366;
+        }
+
+        button.btn-danger:hover {
+            background: rgba(255, 0, 85, 0.2);
+            border-color: rgba(255, 0, 85, 0.4);
+        }
+
+        button.btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
             border-radius: 6px;
-            padding: 16px;
-            height: 500px;
+        }
+
+        /* --- Environment Variable List Builder --- */
+        .env-list {
+            margin-bottom: 12px;
+            max-height: 200px;
             overflow-y: auto;
+            padding-right: 4px;
+        }
+
+        .env-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            animation: slide-in 0.2s ease-out;
+        }
+
+        @keyframes slide-in {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .env-row input {
+            flex: 1;
+        }
+
+        .env-row button {
+            flex: 0 0 38px;
+            height: 38px;
+            padding: 0;
+            color: var(--text-secondary);
+        }
+
+        /* --- Deployments List UI --- */
+        .deployments-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .deployment-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .deployment-item:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-hover);
+        }
+
+        .deployment-info {
+            flex: 1;
+            min-width: 0; /* allows text truncation */
+        }
+
+        .deployment-header-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+
+        .deployment-repo {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .deployment-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .deployment-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .deployment-hash {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .deployment-badge {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* --- Badge Indicator Status Colors --- */
+        .badge-queued { background: rgba(139, 148, 158, 0.12); color: var(--status-queued); }
+        .badge-cloning { background: rgba(245, 166, 35, 0.12); color: var(--status-cloning); }
+        .badge-building { background: rgba(245, 166, 35, 0.12); color: var(--status-building); }
+        .badge-running { background: rgba(0, 255, 135, 0.12); color: var(--status-running); box-shadow: 0 0 8px rgba(0, 255, 135, 0.1); }
+        .badge-failed { background: rgba(255, 0, 85, 0.12); color: var(--status-failed); }
+        .badge-stopped { background: rgba(139, 148, 158, 0.12); color: var(--status-stopped); }
+
+        .badge-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .badge-running .badge-dot { background: var(--status-running); animation: pulse-green 1.5s infinite; }
+        .badge-cloning .badge-dot, .badge-building .badge-dot { background: var(--status-building); animation: pulse-yellow 1.5s infinite; }
+        .badge-queued .badge-dot { background: var(--status-queued); }
+        .badge-failed .badge-dot { background: var(--status-failed); }
+        .badge-stopped .badge-dot { background: var(--status-stopped); }
+
+        .deployment-actions {
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* --- Terminal Console Window --- */
+        .terminal-container {
+            display: flex;
+            flex-direction: column;
+            height: 520px;
+            background: var(--bg-terminal);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .terminal-header {
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .terminal-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 500;
+        }
+
+        .terminal-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .terminal-screen {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
             font-size: 13px;
             line-height: 1.6;
+            color: #d1d5db;
         }
 
         .log-line {
-            color: #e6edf3;
             white-space: pre-wrap;
-        }
-
-        .log-line.success {
-            color: #3fb950;
+            margin-bottom: 4px;
+            border-left: 2px solid transparent;
+            padding-left: 8px;
         }
 
         .log-line.error {
-            color: #f85149;
+            color: #ff4570;
+            background: rgba(255, 0, 85, 0.04);
+            border-left-color: var(--status-failed);
+        }
+
+        .log-line.success {
+            color: #00ff87;
+            background: rgba(0, 255, 135, 0.04);
+            border-left-color: var(--status-running);
         }
 
         .log-line.info {
             color: #58a6ff;
+            border-left-color: var(--color-blue);
         }
 
-        #live-url {
-            margin-top: 16px;
-            font-size: 14px;
+        .empty-logs {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            text-align: center;
+            gap: 12px;
         }
 
-        #live-url a {
-            color: #3fb950;
-            text-decoration: none;
+        .empty-logs-icon {
+            font-size: 24px;
+            opacity: 0.5;
         }
 
-        #live-url a:hover {
-            text-decoration: underline;
+        /* --- Accordion Details (GitHub Webhook) --- */
+        .accordion-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 12px 0 0 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border-color);
+            margin-top: 12px;
+            user-select: none;
+        }
+
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.25s ease-out, padding 0.25s ease;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .accordion-content.open {
+            max-height: 350px;
+            padding: 12px 0 6px 0;
+            overflow-y: auto;
+        }
+
+        .code-box {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-color);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            margin: 6px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            word-break: break-all;
+        }
+
+        .code-box code {
+            color: #d1d5db;
+        }
+
+        .copy-btn {
+            background: transparent;
+            border: none;
+            padding: 2px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        .copy-btn:hover {
+            color: var(--text-primary);
+        }
+
+        /* --- Animations --- */
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(0, 255, 135, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(0, 255, 135, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 255, 135, 0); }
+        }
+
+        @keyframes pulse-yellow {
+            0% { box-shadow: 0 0 0 0 rgba(245, 166, 35, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(245, 166, 35, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 166, 35, 0); }
+        }
+
+        .status-msg {
+            font-size: 12px;
+            margin-top: 8px;
+            min-height: 18px;
+            color: var(--text-secondary);
+        }
+
+        .status-msg.error {
+            color: var(--status-failed);
+        }
+
+        .status-msg.success {
+            color: var(--status-running);
+        }
+
+        /* --- Loading Spinner Component --- */
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            border-radius: 50%;
+            border-top-color: currentColor;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
 
 <body>
 
-    <h1>SpaceDock</h1>
-    <p>Paste a GitHub URL and click Deploy. Logs stream in real time.</p>
-
-    <div class="row">
-        <input id="api-key" type="password" placeholder="API Key (X-API-Key)" style="flex: 0.25;" />
-        <input id="repo-url" type="text" placeholder="https://github.com/your-username/your-repo" />
-        <button onclick="deploy()">Deploy</button>
-    </div>
-
-    <div style="margin-bottom: 24px;">
-        <h3 style="color: #8b949e; font-size: 14px; margin-bottom: 8px;">Environment Variables (Optional)</h3>
-        <div id="env-vars-container">
-            <div class="row env-row" style="margin-bottom: 8px;">
-                <input type="text" class="env-key" placeholder="API_KEY" style="flex: 0.4;" />
-                <input type="text" class="env-value" placeholder="your_secret_value" />
+    <header>
+        <div class="logo-container">
+            <span class="logo-icon">🚀</span>
+            <div>
+                <h1>SpaceDock</h1>
+                <div style="font-size: 11px; color: var(--text-secondary); font-weight: 500;">Self-hosted Git-to-Docker PaaS</div>
             </div>
         </div>
-        <button onclick="addEnvRow()"
-            style="background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 6px 12px; font-size: 12px;">+
-            Add Variable</button>
+        <div class="status-pill">
+            <span id="ws-dot" class="status-dot"></span>
+            <span id="ws-text">Connecting...</span>
+        </div>
+    </header>
+
+    <div class="dashboard-container">
+        
+        <!-- LEFT COLUMN: CONTROLS & CONFIGURATION -->
+        <aside>
+            <!-- Credentials Card -->
+            <div class="card">
+                <div class="card-title">Credentials</div>
+                <div class="input-group">
+                    <label class="input-label" for="api-key">X-API-Key</label>
+                    <input id="api-key" type="password" placeholder="Paste your API key..." oninput="saveApiKey()">
+                </div>
+            </div>
+
+            <!-- Deploy App Card -->
+            <div class="card">
+                <div class="card-title">Deploy Application</div>
+                
+                <div class="input-group">
+                    <label class="input-label" for="repo-url">GitHub Repository URL</label>
+                    <input id="repo-url" type="text" placeholder="https://github.com/username/repo">
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span class="input-label" style="margin-bottom: 0;">Environment Variables</span>
+                        <button type="button" class="btn-sm" onclick="addEnvRow()">+ Add</button>
+                    </div>
+                    <div id="env-vars-container" class="env-list">
+                        <!-- Key-Value rows injected dynamically here -->
+                    </div>
+                </div>
+
+                <button id="deploy-btn" class="btn-primary" style="width: 100%;" onclick="deploy()">
+                    <span>🚀 Deploy Application</span>
+                </button>
+                <div id="status-msg" class="status-msg"></div>
+            </div>
+
+            <!-- Webhooks & Integrations Accordion -->
+            <div class="card">
+                <div class="card-title" style="margin-bottom: 8px;">Integrations</div>
+                <div class="accordion-header" onclick="toggleAccordion()">
+                    <span>🔗 GitOps Push-to-Deploy</span>
+                    <span id="accordion-arrow">▼</span>
+                </div>
+                <div id="webhook-accordion" class="accordion-content">
+                    <p style="margin-bottom: 8px;">Configure a GitHub Webhook to automatically redeploy your application on every push.</p>
+                    
+                    <span class="input-label" style="margin-top: 10px;">1. Payload URL</span>
+                    <div class="code-box">
+                        <code id="webhook-url">http://your-server-ip:8082/api/webhooks/github</code>
+                        <button class="copy-btn" onclick="copyText('webhook-url')" title="Copy URL">📋</button>
+                    </div>
+
+                    <span class="input-label">2. Content Type</span>
+                    <p style="font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-bottom: 8px; color: #d1d5db;">application/json</p>
+
+                    <span class="input-label">3. Secret Key</span>
+                    <div class="code-box">
+                        <code id="webhook-secret">my_super_secret_webhook_key_123</code>
+                        <button class="copy-btn" onclick="copyText('webhook-secret')" title="Copy Secret">📋</button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- RIGHT COLUMN: DEPLOYMENTS & LIVE LOGS -->
+        <main>
+            <!-- Deployments Card -->
+            <div class="card">
+                <div class="card-title">
+                    <span>Active Deployments</span>
+                    <button class="btn-sm" onclick="fetchDeployments()" style="padding: 4px 8px;">🔄 Refresh</button>
+                </div>
+                <div id="deployments-list" class="deployments-container">
+                    <!-- Loaded dynamically via fetchDeployments() -->
+                    <div style="color: var(--text-muted); text-align: center; padding: 20px;">
+                        Loading active applications...
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time Console Terminal -->
+            <div class="terminal-container">
+                <div class="terminal-header">
+                    <div class="terminal-info">
+                        <span style="font-size: 14px;">🖥️</span>
+                        <span id="console-title">Terminal Logs</span>
+                        <span id="console-status-badge" class="deployment-badge" style="display: none;">
+                            <span class="badge-dot"></span>
+                            <span id="console-status-text">Idle</span>
+                        </span>
+                    </div>
+                    <div class="terminal-controls">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; margin-right: 12px; cursor: pointer; user-select: none;">
+                            <input type="checkbox" id="autoscroll-chk" checked style="width: 14px; height: 14px; accent-color: var(--color-blue);">
+                            Auto-scroll
+                        </label>
+                        <button class="btn-sm" style="padding: 2px 8px; background: rgba(255, 255, 255, 0.03);" onclick="clearLogs()">Clear</button>
+                    </div>
+                </div>
+                <div id="terminal-screen" class="terminal-screen">
+                    <div class="empty-logs">
+                        <span class="empty-logs-icon">📡</span>
+                        <div>Select "View Logs" on an application to stream real-time logs here.</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
     </div>
 
-    <div id="status"></div>
-    <div id="log-container"></div>
-    <div id="live-url"></div>
-
+    <!-- JAVASCRIPT LOGIC -->
     <script>
+        // --- Globals ---
+        const BACKEND_URL = window.location.port === '8082' ? window.location.origin : 'http://localhost:8082';
         let stompClient = null;
+        let activeSubscription = null;
+        let activeDeploymentId = null;
+        let deploymentsData = [];
 
-        // Connect to SpaceDock's WebSocket on page load
-        function connect() {
-            const savedKey = localStorage.getItem('spacedock_api_key');
-            if (savedKey) {
-                document.getElementById('api-key').value = savedKey;
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Load cached API key
+            const cachedKey = localStorage.getItem('spacedock_api_key');
+            if (cachedKey) {
+                document.getElementById('api-key').value = cachedKey;
             }
 
-            const socket = new SockJS('http://localhost:8082/ws');
+            // Update Webhook instruction server URL dynamically based on page host
+            const webhookUrlElement = document.getElementById('webhook-url');
+            if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                webhookUrlElement.textContent = `http://${window.location.hostname}:8082/api/webhooks/github`;
+            }
+
+            // Connect WebSocket and fetch initial deployments
+            connectWebSocket();
+            fetchDeployments();
+
+            // Auto-refresh deployments list every 7 seconds
+            setInterval(fetchDeployments, 7000);
+        });
+
+        // --- WebSocket SockJS/STOMP connection ---
+        function connectWebSocket() {
+            const wsDot = document.getElementById('ws-dot');
+            const wsText = document.getElementById('ws-text');
+
+            wsDot.className = 'status-dot';
+            wsText.textContent = 'Connecting...';
+
+            const socket = new SockJS(`${BACKEND_URL}/ws`);
             stompClient = Stomp.over(socket);
-            stompClient.debug = null; // silence debug noise
-            stompClient.connect({}, () => {
-                appendLog('🔗 Connected to SpaceDock', 'info');
+            stompClient.debug = null; // suppress STOMP debugging console noise
+
+            stompClient.connect({}, 
+                () => {
+                    wsDot.className = 'status-dot connected';
+                    wsText.textContent = 'Connected';
+                    console.log('🔗 STOMP WebSocket connected.');
+                    // Re-subscribe if we had an active stream before reconnect
+                    if (activeDeploymentId) {
+                        subscribeToLogs(activeDeploymentId);
+                    }
+                }, 
+                (error) => {
+                    wsDot.className = 'status-dot disconnected';
+                    wsText.textContent = 'Disconnected';
+                    console.warn('❌ WebSocket connection failed, retrying in 5s...', error);
+                    setTimeout(connectWebSocket, 5000);
+                }
+            );
+        }
+
+        // --- Save credentials to localStorage ---
+        function saveApiKey() {
+            const key = document.getElementById('api-key').value.trim();
+            localStorage.setItem('spacedock_api_key', key);
+        }
+
+        function getApiKey() {
+            return document.getElementById('api-key').value.trim();
+        }
+
+        // --- Fetch & Render Deployments list ---
+        function fetchDeployments() {
+            const apiKey = getApiKey();
+            const container = document.getElementById('deployments-list');
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) {
+                headers['X-API-Key'] = apiKey;
+            }
+
+            fetch(`${BACKEND_URL}/api/deployments`, { headers })
+                .then(res => {
+                    if (res.status === 401 || res.status === 403) {
+                        throw new Error("Unauthorized (verify your API key)");
+                    }
+                    if (!res.ok) throw new Error("HTTP error " + res.status);
+                    return res.json();
+                })
+                .then(deployments => {
+                    deploymentsData = deployments;
+                    
+                    if (deployments.length === 0) {
+                        container.innerHTML = `
+                            <div style="color: var(--text-muted); text-align: center; padding: 20px; font-size: 13px;">
+                                No applications deployed yet. Paste a repository URL above to get started!
+                            </div>`;
+                        return;
+                    }
+
+                    // Sort deployments: newer created dates first
+                    deployments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+                    container.innerHTML = '';
+                    deployments.forEach(dep => {
+                        const repoName = getRepoNameFromUrl(dep.repoUrl);
+                        const cleanHash = dep.commitHash ? dep.commitHash.substring(0, 7) : 'no commit';
+                        const statusClass = dep.status ? dep.status.toLowerCase() : 'queued';
+                        const isRunning = dep.status === 'RUNNING';
+                        const isStopped = dep.status === 'STOPPED' || dep.status === 'FAILED';
+                        
+                        // Check if Caddy uses projectName.localhost
+                        const localSubdomain = `${repoName.toLowerCase()}.localhost`;
+                        const liveLink = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+                            ? `http://${localSubdomain}`
+                            : `http://${localSubdomain}:${window.location.port || '80'}`;
+
+                        const depItem = document.createElement('div');
+                        depItem.className = 'deployment-item';
+                        if (activeDeploymentId === dep.id) {
+                            depItem.style.borderColor = 'var(--color-blue)';
+                            depItem.style.background = 'rgba(0, 112, 243, 0.03)';
+                        }
+
+                        depItem.innerHTML = `
+                            <div class="deployment-info">
+                                <div class="deployment-header-row">
+                                    <span class="deployment-repo">${repoName}</span>
+                                    <span class="deployment-badge badge-${statusClass}">
+                                        <span class="badge-dot"></span>
+                                        <span>${dep.status}</span>
+                                    </span>
+                                </div>
+                                <div class="deployment-meta">
+                                    <span>📅 ${formatDate(dep.createdAt)}</span>
+                                    <span class="deployment-hash">💻 git:${cleanHash}</span>
+                                    ${dep.portNumber ? `<span>🔌 port:${dep.portNumber}</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="deployment-actions">
+                                ${isRunning ? `
+                                    <a href="${liveLink}" target="_blank">
+                                        <button class="btn-sm" style="background: rgba(0, 255, 135, 0.08); color: var(--status-running); border-color: rgba(0, 255, 135, 0.2);">
+                                            🔗 Visit
+                                        </button>
+                                    </a>` : ''
+                                }
+                                <button class="btn-sm" onclick="selectDeploymentLogs('${dep.id}', '${dep.repoUrl}')">
+                                    📜 Logs
+                                </button>
+                                ${!isStopped ? `
+                                    <button class="btn-danger btn-sm" id="stop-${dep.id}" onclick="stopDeployment('${dep.id}', event)">
+                                        🛑 Stop
+                                    </button>` : ''
+                                }
+                            </div>
+                        `;
+                        container.appendChild(depItem);
+
+                        // If active console is showing this deployment, update status badge in console
+                        if (activeDeploymentId === dep.id) {
+                            updateConsoleHeaderStatus(dep.status);
+                        }
+                    });
+                })
+                .catch(err => {
+                    container.innerHTML = `
+                        <div style="color: var(--status-failed); text-align: center; padding: 20px; font-size: 13px;">
+                            ⚠️ Error loading deployments: ${err.message}
+                        </div>`;
+                });
+        }
+
+        // --- Stop active container deployment ---
+        function stopDeployment(id, event) {
+            if (event) event.stopPropagation();
+
+            const apiKey = getApiKey();
+            const btn = document.getElementById(`stop-${id}`);
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = `<span class="spinner"></span>`;
+            }
+
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) {
+                headers['X-API-Key'] = apiKey;
+            }
+
+            fetch(`${BACKEND_URL}/api/deployments/${id}`, {
+                method: 'DELETE',
+                headers: headers
+            })
+            .then(res => {
+                if (!res.ok) throw new Error("Failed to stop container");
+                return res.text();
+            })
+            .then(msg => {
+                showMsg("Deployment stopped successfully.", "success");
+                fetchDeployments();
+            })
+            .catch(err => {
+                showMsg("Error stopping: " + err.message, "error");
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "🛑 Stop";
+                }
             });
         }
 
-        function addEnvRow() {
-            const container = document.getElementById('env-vars-container');
-            const row = document.createElement('div');
-            row.className = 'row env-row';
-            row.style.marginBottom = '8px';
-            row.innerHTML = `
-                <input type="text" class="env-key" placeholder="KEY" style="flex: 0.4;" />
-                <input type="text" class="env-value" placeholder="VALUE" />
-            `;
-            container.appendChild(row);
-        }
-
+        // --- Trigger New Deployment ---
         function deploy() {
             const repoUrl = document.getElementById('repo-url').value.trim();
-            const apiKey = document.getElementById('api-key').value.trim();
-            if (!repoUrl) return;
+            const apiKey = getApiKey();
+            const deployBtn = document.getElementById('deploy-btn');
 
-            // Save key
-            localStorage.setItem('spacedock_api_key', apiKey);
+            if (!repoUrl) {
+                showMsg("Repository URL is required.", "error");
+                return;
+            }
 
-            // Extract Environment Variables
+            deployBtn.disabled = true;
+            deployBtn.innerHTML = `<span class="spinner"></span> <span>Queuing deployment...</span>`;
+            showMsg("");
+
+            // Parse Environment Variables
             const envVars = {};
             document.querySelectorAll('.env-row').forEach(row => {
                 const key = row.querySelector('.env-key').value.trim();
@@ -189,81 +984,216 @@
                 }
             });
 
-            clearLogs();
-            document.getElementById('status').textContent = 'Connecting...';
+            const headers = { 'Content-Type': 'application/json' };
+            if (apiKey) {
+                headers['X-API-Key'] = apiKey;
+            }
 
-            fetch('http://localhost:8082/api/deployments', {
+            fetch(`${BACKEND_URL}/api/deployments`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'X-API-Key': apiKey
-                },
-                body: JSON.stringify({ repoUrl: repoUrl, envVars: envVars })
+                headers: headers,
+                body: JSON.stringify({ repoUrl, envVars })
             })
-                .then(res => {
-                    if (!res.ok) throw new Error("Backend returned " + res.status);
-                    return res.text();
-                })
-                .then(responseText => {
-                    // The backend returns: "Deployment queued. ID: <UUID>"
-                    // We split the string to extract just the UUID for the WebSockets
-                    const deploymentId = responseText.split("ID: ")[1].trim();
+            .then(async res => {
+                const text = await res.text();
+                if (!res.ok) {
+                    throw new Error(text || "Failed to trigger deployment.");
+                }
+                return text;
+            })
+            .then(responseText => {
+                // Returns string like: "Deployment queued. ID: <UUID>"
+                const parts = responseText.split("ID: ");
+                if (parts.length < 2) {
+                    throw new Error("Could not parse deployment ID from server response.");
+                }
+                const deploymentId = parts[1].trim();
+                
+                showMsg("Deployment successfully queued!", "success");
+                
+                // Clear fields
+                document.getElementById('repo-url').value = '';
+                document.getElementById('env-vars-container').innerHTML = '';
 
-                    document.getElementById('status').textContent = 'Deployment ID: ' + deploymentId;
+                // Select this deployment and immediately connect logs console
+                selectDeploymentLogs(deploymentId, repoUrl);
+                
+                // Refresh list
+                fetchDeployments();
+            })
+            .catch(error => {
+                showMsg(error.message, "error");
+            })
+            .finally(() => {
+                deployBtn.disabled = false;
+                deployBtn.innerHTML = `<span>🚀 Deploy Application</span>`;
+            });
+        }
 
-                    // Subscribe to the WebSocket topic using the clean UUID
-                    subscribeToLogs(deploymentId);
-                })
-                .catch(error => {
-                    document.getElementById('status').textContent = 'Deployment Failed';
-                    appendLog('❌ Error reaching SpaceDock: ' + error.message, 'error');
-                });
+        // --- Subscribe to STOMP WebSockets logs for specific deployment ---
+        function selectDeploymentLogs(deploymentId, repoUrl) {
+            activeDeploymentId = deploymentId;
+
+            // Update local style selection
+            fetchDeployments();
+
+            // Clear terminal screen and initialize
+            clearLogs();
+            document.getElementById('console-title').textContent = `${getRepoNameFromUrl(repoUrl)} Logs`;
+            
+            // Find current status in cached data
+            const currentDep = deploymentsData.find(d => d.id === deploymentId);
+            updateConsoleHeaderStatus(currentDep ? currentDep.status : 'QUEUED');
+
+            // Unsubscribe existing websocket log sub
+            if (activeSubscription) {
+                activeSubscription.unsubscribe();
+                activeSubscription = null;
+            }
+
+            // Subscribe to new topic
+            subscribeToLogs(deploymentId);
         }
 
         function subscribeToLogs(deploymentId) {
             if (!stompClient || !stompClient.connected) {
-                appendLog('❌ WebSocket not connected', 'error');
+                appendLogLine('❌ WebSocket stream offline. Retrying connection...', 'error');
                 return;
             }
 
             const topic = `/topic/logs/${deploymentId}`;
-            appendLog(`📡 Subscribing to ${topic}`, 'info');
+            appendLogLine(`📡 Subscribed to real-time logs...`, 'info');
 
-            stompClient.subscribe(topic, (message) => {
+            activeSubscription = stompClient.subscribe(topic, (message) => {
                 const line = message.body;
-                if (line.startsWith('❌') || line.toLowerCase().includes('error')) {
-                    appendLog(line, 'error');
-                } else if (line.startsWith('✅') || line.startsWith('🌍')) {
-                    appendLog(line, 'success');
-                    if (line.startsWith('🌍')) {
-                        const urlMatch = line.match(/http:\/\/\S+/);
-                        if (urlMatch) {
-                            const url = urlMatch[0];
-                            document.getElementById('live-url').innerHTML =
-                                `Your app is live: <a href="${url}" target="_blank">${url}</a>`;
-                        }
-                    }
-                } else {
-                    appendLog(line, '');
+                
+                let type = '';
+                if (line.startsWith('❌') || line.toLowerCase().includes('error') || line.toLowerCase().includes('failed')) {
+                    type = 'error';
+                } else if (line.startsWith('✅') || line.startsWith('🌍') || line.toLowerCase().includes('success')) {
+                    type = 'success';
+                } else if (line.startsWith('📡') || line.startsWith('🐳') || line.startsWith('🧹')) {
+                    type = 'info';
                 }
+
+                appendLogLine(line, type);
             });
         }
 
-        function appendLog(line, type) {
-            const container = document.getElementById('log-container');
-            const div = document.createElement('div');
-            div.className = 'log-line ' + (type || '');
-            div.textContent = line;
-            container.appendChild(div);
-            container.scrollTop = container.scrollHeight; // auto-scroll
+        // --- Terminal Helper Operations ---
+        function appendLogLine(text, type) {
+            const screen = document.getElementById('terminal-screen');
+            const emptyLogs = screen.querySelector('.empty-logs');
+            if (emptyLogs) {
+                screen.innerHTML = '';
+            }
+
+            const lineDiv = document.createElement('div');
+            lineDiv.className = `log-line ${type}`;
+            lineDiv.textContent = text;
+            screen.appendChild(lineDiv);
+
+            // Handle autoscroll
+            const autoscroll = document.getElementById('autoscroll-chk').checked;
+            if (autoscroll) {
+                screen.scrollTop = screen.scrollHeight;
+            }
         }
 
         function clearLogs() {
-            document.getElementById('log-container').innerHTML = '';
+            document.getElementById('terminal-screen').innerHTML = `
+                <div class="empty-logs">
+                    <span class="empty-logs-icon">📡</span>
+                    <div>Ready to display logs. Select an application to begin streaming.</div>
+                </div>`;
         }
 
-        // Connect as soon as the page loads
-        connect();
+        function updateConsoleHeaderStatus(status) {
+            const badge = document.getElementById('console-status-badge');
+            const label = document.getElementById('console-status-text');
+
+            if (!status) {
+                badge.style.display = 'none';
+                return;
+            }
+
+            badge.style.display = 'inline-flex';
+            badge.className = `deployment-badge badge-${status.toLowerCase()}`;
+            label.textContent = status;
+        }
+
+        // --- Environment Variable Manager UI ---
+        function addEnvRow() {
+            const container = document.getElementById('env-vars-container');
+            const row = document.createElement('div');
+            row.className = 'env-row';
+            row.innerHTML = `
+                <input type="text" class="env-key" placeholder="KEY" style="flex: 0.4;">
+                <input type="text" class="env-value" placeholder="VALUE">
+                <button type="button" onclick="removeEnvRow(this)">✕</button>
+            `;
+            container.appendChild(row);
+        }
+
+        function removeEnvRow(button) {
+            const row = button.parentElement;
+            row.style.opacity = '0';
+            row.style.transform = 'translateY(-4px)';
+            setTimeout(() => {
+                row.remove();
+            }, 150);
+        }
+
+        // --- UI Utilities ---
+        function toggleAccordion() {
+            const content = document.getElementById('webhook-accordion');
+            const arrow = document.getElementById('accordion-arrow');
+            
+            if (content.classList.contains('open')) {
+                content.classList.remove('open');
+                arrow.textContent = '▼';
+            } else {
+                content.classList.add('open');
+                arrow.textContent = '▲';
+            }
+        }
+
+        function showMsg(text, type = '') {
+            const msgEl = document.getElementById('status-msg');
+            msgEl.textContent = text;
+            msgEl.className = 'status-msg ' + type;
+        }
+
+        function getRepoNameFromUrl(url) {
+            if (!url) return 'Unknown App';
+            try {
+                // Extract repository name from github url, e.g. "username/repo" -> "repo"
+                const parts = url.replace(/\/$/, "").split("/");
+                return parts[parts.length - 1] || 'App';
+            } catch (e) {
+                return 'App';
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return 'n/a';
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + 
+                       date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            } catch (e) {
+                return dateString;
+            }
+        }
+
+        function copyText(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert("Copied to clipboard!");
+            }).catch(err => {
+                console.error("Failed to copy: ", err);
+            });
+        }
     </script>
 </body>
 
