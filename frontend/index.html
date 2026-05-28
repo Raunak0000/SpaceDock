@@ -15,6 +15,9 @@
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js" integrity="sha384-svdnwiXBL+Js+yUneJSRFy24NgGiOfDM/vkQl/vCeVrcbYD6yW8EwPr1FnxTEZsR" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js" integrity="sha384-clKAk7WaYNQiu/pGVWisoFQcSK2VL7YweoI1gim9/HFbMsRvD2ZtLWNoZoL4df65" crossorigin="anonymous"></script>
 
+    <!-- Main Entry Module -->
+    <script type="module" src="main.js"></script>
+
     <style>
         /* --- Design Tokens & CSS Variables --- */
         :root {
@@ -350,7 +353,7 @@
 
         .deployment-info {
             flex: 1;
-            min-width: 0; /* allows text truncation */
+            min-width: 0;
         }
 
         .deployment-header-row {
@@ -603,7 +606,6 @@
             color: var(--status-running);
         }
 
-        /* --- Loading Spinner Component --- */
         .spinner {
             width: 16px;
             height: 16px;
@@ -645,7 +647,7 @@
                 <div class="card-title">Credentials</div>
                 <div class="input-group">
                     <label class="input-label" for="api-key">X-API-Key</label>
-                    <input id="api-key" type="password" placeholder="Paste your API key..." oninput="saveApiKey()">
+                    <input id="api-key" type="password" placeholder="Paste your API key...">
                 </div>
             </div>
 
@@ -668,7 +670,7 @@
                     </div>
                 </div>
 
-                <button id="deploy-btn" class="btn-primary" style="width: 100%;" onclick="deploy()">
+                <button id="deploy-btn" class="btn-primary" style="width: 100%;">
                     <span>🚀 Deploy Application</span>
                 </button>
                 <div id="status-msg" class="status-msg"></div>
@@ -677,7 +679,7 @@
             <!-- Webhooks & Integrations Accordion -->
             <div class="card">
                 <div class="card-title" style="margin-bottom: 8px;">Integrations</div>
-                <div class="accordion-header" onclick="toggleAccordion()">
+                <div class="accordion-header">
                     <span>🔗 GitOps Push-to-Deploy</span>
                     <span id="accordion-arrow">▼</span>
                 </div>
@@ -687,7 +689,7 @@
                     <span class="input-label" style="margin-top: 10px;">1. Payload URL</span>
                     <div class="code-box">
                         <code id="webhook-url">http://your-server-ip:8082/api/webhooks/github</code>
-                        <button class="copy-btn" onclick="copyText('webhook-url')" title="Copy URL">📋</button>
+                        <button class="copy-btn" data-copy="webhook-url" title="Copy URL">📋</button>
                     </div>
 
                     <span class="input-label">2. Content Type</span>
@@ -696,7 +698,7 @@
                     <span class="input-label">3. Secret Key</span>
                     <div class="code-box">
                         <code id="webhook-secret">my_super_secret_webhook_key_123</code>
-                        <button class="copy-btn" onclick="copyText('webhook-secret')" title="Copy Secret">📋</button>
+                        <button class="copy-btn" data-copy="webhook-secret" title="Copy Secret">📋</button>
                     </div>
                 </div>
             </div>
@@ -711,7 +713,6 @@
                     <button class="btn-sm" onclick="fetchDeployments()" style="padding: 4px 8px;">🔄 Refresh</button>
                 </div>
                 <div id="deployments-list" class="deployments-container">
-                    <!-- Loaded dynamically via fetchDeployments() -->
                     <div style="color: var(--text-muted); text-align: center; padding: 20px;">
                         Loading active applications...
                     </div>
@@ -748,453 +749,6 @@
         
     </div>
 
-    <!-- JAVASCRIPT LOGIC -->
-    <script>
-        // --- Globals ---
-        const BACKEND_URL = window.location.port === '8082' ? window.location.origin : 'http://localhost:8082';
-        let stompClient = null;
-        let activeSubscription = null;
-        let activeDeploymentId = null;
-        let deploymentsData = [];
-
-        // --- Init ---
-        document.addEventListener('DOMContentLoaded', () => {
-            // Load cached API key
-            const cachedKey = localStorage.getItem('spacedock_api_key');
-            if (cachedKey) {
-                document.getElementById('api-key').value = cachedKey;
-            }
-
-            // Update Webhook instruction server URL dynamically based on page host
-            const webhookUrlElement = document.getElementById('webhook-url');
-            if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                webhookUrlElement.textContent = `http://${window.location.hostname}:8082/api/webhooks/github`;
-            }
-
-            // Connect WebSocket and fetch initial deployments
-            connectWebSocket();
-            fetchDeployments();
-
-            // Auto-refresh deployments list every 7 seconds
-            setInterval(fetchDeployments, 7000);
-        });
-
-        // --- WebSocket SockJS/STOMP connection ---
-        function connectWebSocket() {
-            const wsDot = document.getElementById('ws-dot');
-            const wsText = document.getElementById('ws-text');
-
-            wsDot.className = 'status-dot';
-            wsText.textContent = 'Connecting...';
-
-            const socket = new SockJS(`${BACKEND_URL}/ws`);
-            stompClient = Stomp.over(socket);
-            stompClient.debug = null; // suppress STOMP debugging console noise
-
-            stompClient.connect({}, 
-                () => {
-                    wsDot.className = 'status-dot connected';
-                    wsText.textContent = 'Connected';
-                    console.log('🔗 STOMP WebSocket connected.');
-                    // Re-subscribe if we had an active stream before reconnect
-                    if (activeDeploymentId) {
-                        subscribeToLogs(activeDeploymentId);
-                    }
-                }, 
-                (error) => {
-                    wsDot.className = 'status-dot disconnected';
-                    wsText.textContent = 'Disconnected';
-                    console.warn('❌ WebSocket connection failed, retrying in 5s...', error);
-                    setTimeout(connectWebSocket, 5000);
-                }
-            );
-        }
-
-        // --- Save credentials to localStorage ---
-        function saveApiKey() {
-            const key = document.getElementById('api-key').value.trim();
-            localStorage.setItem('spacedock_api_key', key);
-        }
-
-        function getApiKey() {
-            return document.getElementById('api-key').value.trim();
-        }
-
-        // --- Fetch & Render Deployments list ---
-        function fetchDeployments() {
-            const apiKey = getApiKey();
-            const container = document.getElementById('deployments-list');
-
-            const headers = { 'Content-Type': 'application/json' };
-            if (apiKey) {
-                headers['X-API-Key'] = apiKey;
-            }
-
-            fetch(`${BACKEND_URL}/api/deployments`, { headers })
-                .then(res => {
-                    if (res.status === 401 || res.status === 403) {
-                        throw new Error("Unauthorized (verify your API key)");
-                    }
-                    if (!res.ok) throw new Error("HTTP error " + res.status);
-                    return res.json();
-                })
-                .then(deployments => {
-                    deploymentsData = deployments;
-                    
-                    if (deployments.length === 0) {
-                        container.innerHTML = `
-                            <div style="color: var(--text-muted); text-align: center; padding: 20px; font-size: 13px;">
-                                No applications deployed yet. Paste a repository URL above to get started!
-                            </div>`;
-                        return;
-                    }
-
-                    // Sort deployments: newer created dates first
-                    deployments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-                    container.innerHTML = '';
-                    deployments.forEach(dep => {
-                        const repoName = getRepoNameFromUrl(dep.repoUrl);
-                        const cleanHash = dep.commitHash ? dep.commitHash.substring(0, 7) : 'no commit';
-                        const statusClass = dep.status ? dep.status.toLowerCase() : 'queued';
-                        const isRunning = dep.status === 'RUNNING';
-                        const isStopped = dep.status === 'STOPPED' || dep.status === 'FAILED';
-                        
-                        // Check if Caddy uses projectName.localhost
-                        const localSubdomain = `${repoName.toLowerCase()}.localhost`;
-                        const liveLink = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-                            ? `http://${localSubdomain}`
-                            : `http://${localSubdomain}:${window.location.port || '80'}`;
-
-                        const depItem = document.createElement('div');
-                        depItem.className = 'deployment-item';
-                        if (activeDeploymentId === dep.id) {
-                            depItem.style.borderColor = 'var(--color-blue)';
-                            depItem.style.background = 'rgba(0, 112, 243, 0.03)';
-                        }
-
-                        depItem.innerHTML = `
-                            <div class="deployment-info">
-                                <div class="deployment-header-row">
-                                    <span class="deployment-repo">${repoName}</span>
-                                    <span class="deployment-badge badge-${statusClass}">
-                                        <span class="badge-dot"></span>
-                                        <span>${dep.status}</span>
-                                    </span>
-                                </div>
-                                <div class="deployment-meta">
-                                    <span>📅 ${formatDate(dep.createdAt)}</span>
-                                    <span class="deployment-hash">💻 git:${cleanHash}</span>
-                                    ${dep.portNumber ? `<span>🔌 port:${dep.portNumber}</span>` : ''}
-                                </div>
-                            </div>
-                            <div class="deployment-actions">
-                                ${isRunning ? `
-                                    <a href="${liveLink}" target="_blank">
-                                        <button class="btn-sm" style="background: rgba(0, 255, 135, 0.08); color: var(--status-running); border-color: rgba(0, 255, 135, 0.2);">
-                                            🔗 Visit
-                                        </button>
-                                    </a>` : ''
-                                }
-                                <button class="btn-sm" onclick="selectDeploymentLogs('${dep.id}', '${dep.repoUrl}')">
-                                    📜 Logs
-                                </button>
-                                ${!isStopped ? `
-                                    <button class="btn-danger btn-sm" id="stop-${dep.id}" onclick="stopDeployment('${dep.id}', event)">
-                                        🛑 Stop
-                                    </button>` : ''
-                                }
-                            </div>
-                        `;
-                        container.appendChild(depItem);
-
-                        // If active console is showing this deployment, update status badge in console
-                        if (activeDeploymentId === dep.id) {
-                            updateConsoleHeaderStatus(dep.status);
-                        }
-                    });
-                })
-                .catch(err => {
-                    container.innerHTML = `
-                        <div style="color: var(--status-failed); text-align: center; padding: 20px; font-size: 13px;">
-                            ⚠️ Error loading deployments: ${err.message}
-                        </div>`;
-                });
-        }
-
-        // --- Stop active container deployment ---
-        function stopDeployment(id, event) {
-            if (event) event.stopPropagation();
-
-            const apiKey = getApiKey();
-            const btn = document.getElementById(`stop-${id}`);
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = `<span class="spinner"></span>`;
-            }
-
-            const headers = { 'Content-Type': 'application/json' };
-            if (apiKey) {
-                headers['X-API-Key'] = apiKey;
-            }
-
-            fetch(`${BACKEND_URL}/api/deployments/${id}`, {
-                method: 'DELETE',
-                headers: headers
-            })
-            .then(res => {
-                if (!res.ok) throw new Error("Failed to stop container");
-                return res.text();
-            })
-            .then(msg => {
-                showMsg("Deployment stopped successfully.", "success");
-                fetchDeployments();
-            })
-            .catch(err => {
-                showMsg("Error stopping: " + err.message, "error");
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = "🛑 Stop";
-                }
-            });
-        }
-
-        // --- Trigger New Deployment ---
-        function deploy() {
-            const repoUrl = document.getElementById('repo-url').value.trim();
-            const apiKey = getApiKey();
-            const deployBtn = document.getElementById('deploy-btn');
-
-            if (!repoUrl) {
-                showMsg("Repository URL is required.", "error");
-                return;
-            }
-
-            deployBtn.disabled = true;
-            deployBtn.innerHTML = `<span class="spinner"></span> <span>Queuing deployment...</span>`;
-            showMsg("");
-
-            // Parse Environment Variables
-            const envVars = {};
-            document.querySelectorAll('.env-row').forEach(row => {
-                const key = row.querySelector('.env-key').value.trim();
-                const value = row.querySelector('.env-value').value.trim();
-                if (key && value) {
-                    envVars[key] = value;
-                }
-            });
-
-            const headers = { 'Content-Type': 'application/json' };
-            if (apiKey) {
-                headers['X-API-Key'] = apiKey;
-            }
-
-            fetch(`${BACKEND_URL}/api/deployments`, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({ repoUrl, envVars })
-            })
-            .then(async res => {
-                const text = await res.text();
-                if (!res.ok) {
-                    throw new Error(text || "Failed to trigger deployment.");
-                }
-                return text;
-            })
-            .then(responseText => {
-                // Returns string like: "Deployment queued. ID: <UUID>"
-                const parts = responseText.split("ID: ");
-                if (parts.length < 2) {
-                    throw new Error("Could not parse deployment ID from server response.");
-                }
-                const deploymentId = parts[1].trim();
-                
-                showMsg("Deployment successfully queued!", "success");
-                
-                // Clear fields
-                document.getElementById('repo-url').value = '';
-                document.getElementById('env-vars-container').innerHTML = '';
-
-                // Select this deployment and immediately connect logs console
-                selectDeploymentLogs(deploymentId, repoUrl);
-                
-                // Refresh list
-                fetchDeployments();
-            })
-            .catch(error => {
-                showMsg(error.message, "error");
-            })
-            .finally(() => {
-                deployBtn.disabled = false;
-                deployBtn.innerHTML = `<span>🚀 Deploy Application</span>`;
-            });
-        }
-
-        // --- Subscribe to STOMP WebSockets logs for specific deployment ---
-        function selectDeploymentLogs(deploymentId, repoUrl) {
-            activeDeploymentId = deploymentId;
-
-            // Update local style selection
-            fetchDeployments();
-
-            // Clear terminal screen and initialize
-            clearLogs();
-            document.getElementById('console-title').textContent = `${getRepoNameFromUrl(repoUrl)} Logs`;
-            
-            // Find current status in cached data
-            const currentDep = deploymentsData.find(d => d.id === deploymentId);
-            updateConsoleHeaderStatus(currentDep ? currentDep.status : 'QUEUED');
-
-            // Unsubscribe existing websocket log sub
-            if (activeSubscription) {
-                activeSubscription.unsubscribe();
-                activeSubscription = null;
-            }
-
-            // Subscribe to new topic
-            subscribeToLogs(deploymentId);
-        }
-
-        function subscribeToLogs(deploymentId) {
-            if (!stompClient || !stompClient.connected) {
-                appendLogLine('❌ WebSocket stream offline. Retrying connection...', 'error');
-                return;
-            }
-
-            const topic = `/topic/logs/${deploymentId}`;
-            appendLogLine(`📡 Subscribed to real-time logs...`, 'info');
-
-            activeSubscription = stompClient.subscribe(topic, (message) => {
-                const line = message.body;
-                
-                let type = '';
-                if (line.startsWith('❌') || line.toLowerCase().includes('error') || line.toLowerCase().includes('failed')) {
-                    type = 'error';
-                } else if (line.startsWith('✅') || line.startsWith('🌍') || line.toLowerCase().includes('success')) {
-                    type = 'success';
-                } else if (line.startsWith('📡') || line.startsWith('🐳') || line.startsWith('🧹')) {
-                    type = 'info';
-                }
-
-                appendLogLine(line, type);
-            });
-        }
-
-        // --- Terminal Helper Operations ---
-        function appendLogLine(text, type) {
-            const screen = document.getElementById('terminal-screen');
-            const emptyLogs = screen.querySelector('.empty-logs');
-            if (emptyLogs) {
-                screen.innerHTML = '';
-            }
-
-            const lineDiv = document.createElement('div');
-            lineDiv.className = `log-line ${type}`;
-            lineDiv.textContent = text;
-            screen.appendChild(lineDiv);
-
-            // Handle autoscroll
-            const autoscroll = document.getElementById('autoscroll-chk').checked;
-            if (autoscroll) {
-                screen.scrollTop = screen.scrollHeight;
-            }
-        }
-
-        function clearLogs() {
-            document.getElementById('terminal-screen').innerHTML = `
-                <div class="empty-logs">
-                    <span class="empty-logs-icon">📡</span>
-                    <div>Ready to display logs. Select an application to begin streaming.</div>
-                </div>`;
-        }
-
-        function updateConsoleHeaderStatus(status) {
-            const badge = document.getElementById('console-status-badge');
-            const label = document.getElementById('console-status-text');
-
-            if (!status) {
-                badge.style.display = 'none';
-                return;
-            }
-
-            badge.style.display = 'inline-flex';
-            badge.className = `deployment-badge badge-${status.toLowerCase()}`;
-            label.textContent = status;
-        }
-
-        // --- Environment Variable Manager UI ---
-        function addEnvRow() {
-            const container = document.getElementById('env-vars-container');
-            const row = document.createElement('div');
-            row.className = 'env-row';
-            row.innerHTML = `
-                <input type="text" class="env-key" placeholder="KEY" style="flex: 0.4;">
-                <input type="text" class="env-value" placeholder="VALUE">
-                <button type="button" onclick="removeEnvRow(this)">✕</button>
-            `;
-            container.appendChild(row);
-        }
-
-        function removeEnvRow(button) {
-            const row = button.parentElement;
-            row.style.opacity = '0';
-            row.style.transform = 'translateY(-4px)';
-            setTimeout(() => {
-                row.remove();
-            }, 150);
-        }
-
-        // --- UI Utilities ---
-        function toggleAccordion() {
-            const content = document.getElementById('webhook-accordion');
-            const arrow = document.getElementById('accordion-arrow');
-            
-            if (content.classList.contains('open')) {
-                content.classList.remove('open');
-                arrow.textContent = '▼';
-            } else {
-                content.classList.add('open');
-                arrow.textContent = '▲';
-            }
-        }
-
-        function showMsg(text, type = '') {
-            const msgEl = document.getElementById('status-msg');
-            msgEl.textContent = text;
-            msgEl.className = 'status-msg ' + type;
-        }
-
-        function getRepoNameFromUrl(url) {
-            if (!url) return 'Unknown App';
-            try {
-                // Extract repository name from github url, e.g. "username/repo" -> "repo"
-                const parts = url.replace(/\/$/, "").split("/");
-                return parts[parts.length - 1] || 'App';
-            } catch (e) {
-                return 'App';
-            }
-        }
-
-        function formatDate(dateString) {
-            if (!dateString) return 'n/a';
-            try {
-                const date = new Date(dateString);
-                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + 
-                       date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-            } catch (e) {
-                return dateString;
-            }
-        }
-
-        function copyText(elementId) {
-            const text = document.getElementById(elementId).textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                alert("Copied to clipboard!");
-            }).catch(err => {
-                console.error("Failed to copy: ", err);
-            });
-        }
-    </script>
 </body>
 
 </html>
