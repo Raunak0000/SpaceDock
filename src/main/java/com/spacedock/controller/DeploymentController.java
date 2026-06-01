@@ -6,6 +6,7 @@ import com.spacedock.model.Deployment;
 import com.spacedock.repository.DeploymentRepository;
 import com.spacedock.service.DockerService;
 import com.spacedock.service.GitService;
+import com.spacedock.service.ProxyService;
 import com.spacedock.util.CryptoUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
@@ -24,14 +25,17 @@ public class DeploymentController {
     private final DeploymentRepository deploymentRepository;
     private final DockerService dockerService;
     private final CryptoUtil cryptoUtil;
+    private final ProxyService proxyService;
 
     public DeploymentController(GitService gitService,
             DeploymentRepository deploymentRepository,
             DockerService dockerService,
+            ProxyService proxyService,
             @Value("${spacedock.encryption-key}") String encryptionKey) {
         this.gitService = gitService;
         this.deploymentRepository = deploymentRepository;
         this.dockerService = dockerService;
+        this.proxyService = proxyService;
         this.cryptoUtil = new CryptoUtil(encryptionKey);
     }
 
@@ -112,12 +116,23 @@ public class DeploymentController {
     @DeleteMapping("/{id}")
     public ResponseEntity<String> stopDeployment(@PathVariable UUID id) {
         return deploymentRepository.findById(id).map(deployment -> {
+            // 1. Stop the low-level container worker
             if (deployment.getContainerId() != null) {
                 dockerService.stopContainer(deployment.getContainerId());
             }
+
+            // 2. 🟢 NEW: Clean up the live Caddy routing mapping to prevent dangling 502s
+            // Extracts the project name (e.g., "my-app") from the repo URL to find matching
+            // records
+            String[] parts = deployment.getRepoUrl().split("/");
+            String rawName = parts[parts.length - 1];
+            String projectName = rawName.replace(".git", "").toLowerCase();
+            proxyService.removeRoutesForProject(projectName);
+
+            // 3. Persist state changes to database
             deployment.setStatus(Deployment.DeploymentStatus.STOPPED);
             deploymentRepository.save(deployment);
-            return ResponseEntity.ok("Deployment stopped: " + id);
+            return ResponseEntity.ok("Deployment stopped and proxy routes cleaned up: " + id);
         }).orElse(ResponseEntity.notFound().build());
     }
 }
