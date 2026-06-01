@@ -56,7 +56,7 @@ public class GitService {
             logBroadcaster.broadcastLog(idStr, "✅ Clone complete");
 
             // Runtime check
-            if (!runtimeDetector.isValidWorkspace(workspacePath)) { // 
+            if (!runtimeDetector.isValidWorkspace(workspacePath)) {
                 logBroadcaster.broadcastLog(idStr,
                         "❌ No valid runtime found (Dockerfile, package.json, etc.). Deployment aborted.");
                 updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
@@ -124,8 +124,7 @@ public class GitService {
         } catch (Exception e) {
             System.err.println("❌ Deployment pipeline failed: " + e.getMessage());
             e.printStackTrace();
-            logBroadcaster.broadcastLog(idStr,
-                    "❌ Deployment failed: " + e.getMessage());
+            logBroadcaster.broadcastLog(idStr, "❌ Deployment failed: " + e.getMessage());
             updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
             if (workspacePath != null) {
                 dockerService.cleanupWorkspace(workspacePath);
@@ -133,8 +132,7 @@ public class GitService {
         }
     }
 
-    private void updateStatus(UUID deploymentId,
-            Deployment.DeploymentStatus status) {
+    private void updateStatus(UUID deploymentId, Deployment.DeploymentStatus status) {
         deploymentRepository.findById(deploymentId).ifPresent(d -> {
             d.setStatus(status);
             deploymentRepository.save(d);
@@ -152,14 +150,12 @@ public class GitService {
         });
     }
 
-    private Path cloneRepository(String repoUrl,
-            UUID deploymentId) throws GitAPIException {
+    private Path cloneRepository(String repoUrl, UUID deploymentId) throws GitAPIException {
         String folderName = "deployment_" + deploymentId;
         File targetDir = Paths.get(WORKSPACE_DIR, folderName).toFile();
 
-        System.out.println("⬇️  Cloning: " + repoUrl);
+        System.out.println("⬇  Cloning: " + repoUrl);
         System.out.println("📁 Target:  " + targetDir.getAbsolutePath());
-
         try (Git git = Git.cloneRepository()
                 .setURI(repoUrl)
                 .setDirectory(targetDir)
@@ -169,32 +165,36 @@ public class GitService {
         return targetDir.toPath();
     }
 
-    // Extracts "spacedock-test-app" from the GitHub URL
     private String extractProjectName(String repoUrl) {
         String[] parts = repoUrl.split("/");
         String rawName = parts[parts.length - 1];
         return rawName.replace(".git", "").toLowerCase();
     }
 
-private boolean waitForContainer(int port, String deploymentId) {
-    int maxAttempts = 15; // 15 checks * 2 seconds = 30 seconds max timeout loop
-    for (int i = 0; i < maxAttempts; i++) {
-        try {
-            // Attempt to open a lightweight raw socket connection on localhost
-            try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
-                logBroadcaster.broadcastLog(deploymentId, "🟢 Readiness probe passed! Dynamic port " + port + " is active.");
-                return true;
-            }
-        } catch (java.io.IOException e) {
-            logBroadcaster.broadcastLog(deploymentId, "⏳ Application booting... Retrying readiness probe (Attempt " + (i + 1) + "/" + maxAttempts + ")...");
+    /**
+     * Active TCP Readiness Probe
+     * Repeatedly checks if the dynamically assigned host port is actively accepting connections
+     * before registering the application route with Caddy.
+     */
+    private boolean waitForContainer(int port, String deploymentId) {
+        int maxAttempts = 15; // 15 checks * 2 seconds = 30 seconds max timeout loop
+        for (int i = 0; i < maxAttempts; i++) {
             try {
-                Thread.sleep(2000); // Wait 2 seconds between checks
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-                return false;
+                // Attempt to open a lightweight raw socket connection on localhost
+                try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
+                    logBroadcaster.broadcastLog(deploymentId, "🟢 Readiness probe passed! Dynamic port " + port + " is active.");
+                    return true;
+                }
+            } catch (java.io.IOException e) {
+                logBroadcaster.broadcastLog(deploymentId, "⏳ Application booting... Retrying readiness probe (Attempt " + (i + 1) + "/" + maxAttempts + ")...");
+                try {
+                    Thread.sleep(2000); // Wait 2 seconds between checks
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
             }
         }
+        return false; // Timed out
     }
-    return false; // Timed out
-}
 }
