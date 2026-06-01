@@ -83,18 +83,30 @@ public class GitService {
                 }
             }
 
+            // Execute runtime container creation
             DockerService.RunResult result = dockerService.runContainer(imageTag, decryptedVars);
+
+            // 🛑 Gated Check: Block execution path until container engine is responsive
+            logBroadcaster.broadcastLog(idStr, "🐳 Container infrastructure spawned. Initializing network health verification...");
+            boolean containerIsHealthy = waitForContainer(result.hostPort(), idStr);
+
+            if (!containerIsHealthy) {
+                logBroadcaster.broadcastLog(idStr, "❌ Infrastructure Timeout: Container health validation failed after 30 seconds.");
+                updateStatus(deploymentId, Deployment.DeploymentStatus.FAILED);
+                dockerService.stopContainer(result.containerId());
+                return;
+            }
 
             // --- ZERO DOWNTIME CLEANUP: Stop older versions of this project ---
             deploymentRepository.findAll().stream()
                     .filter(d -> d.getStatus() == Deployment.DeploymentStatus.RUNNING)
                     .filter(d -> d.getRepoUrl().equals(repoUrl))
-                    .filter(d -> !d.getId().equals(deploymentId)) // Don't kill the one we just started!
+                    .filter(d -> !d.getId().equals(deploymentId))
                     .forEach(old -> {
                         dockerService.stopContainer(old.getContainerId());
                         old.setStatus(Deployment.DeploymentStatus.STOPPED);
                         deploymentRepository.save(old);
-                        logBroadcaster.broadcastLog(idStr, "🛑 Stopped previous version (Port: " + old.getPortNumber() + ")");
+                        logBroadcaster.broadcastLog(idStr, "🛑 Gracefully terminated legacy container build version (Port: " + old.getPortNumber() + ")");
                     });
 
             // Persist container info and mark as RUNNING
@@ -106,7 +118,7 @@ public class GitService {
 
             // Broadcast the clean, permanent subdomain URL
             String liveUrl = "http://" + projectName + ".localhost";
-            logBroadcaster.broadcastLog(idStr, "🌍 Static Deployment live at " + liveUrl);
+            logBroadcaster.broadcastLog(idStr, "🌍 SpaceDock Fleet Routing Complete! Application is live at: " + liveUrl);
             System.out.println("🌍 Static Deployment live at " + liveUrl);
 
         } catch (Exception e) {
@@ -163,4 +175,26 @@ public class GitService {
         String rawName = parts[parts.length - 1];
         return rawName.replace(".git", "").toLowerCase();
     }
+
+private boolean waitForContainer(int port, String deploymentId) {
+    int maxAttempts = 15; // 15 checks * 2 seconds = 30 seconds max timeout loop
+    for (int i = 0; i < maxAttempts; i++) {
+        try {
+            // Attempt to open a lightweight raw socket connection on localhost
+            try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
+                logBroadcaster.broadcastLog(deploymentId, "🟢 Readiness probe passed! Dynamic port " + port + " is active.");
+                return true;
+            }
+        } catch (java.io.IOException e) {
+            logBroadcaster.broadcastLog(deploymentId, "⏳ Application booting... Retrying readiness probe (Attempt " + (i + 1) + "/" + maxAttempts + ")...");
+            try {
+                Thread.sleep(2000); // Wait 2 seconds between checks
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+    }
+    return false; // Timed out
+}
 }
